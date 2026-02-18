@@ -118,8 +118,9 @@ def vault_search(ctx, query):
 
 @vault.command(name="read")
 @click.argument("name")
+@click.option("-o", "--open", "open_app", is_flag=True, help="Also open in Obsidian")
 @click.pass_context
-def vault_read(ctx, name):
+def vault_read(ctx, name, open_app):
     """Read a vault note."""
     from rich.markdown import Markdown
     from talos.obsidian import Vault
@@ -134,6 +135,27 @@ def vault_read(ctx, name):
         console.print(f"[err]not found: {name}[/]")
         return
     console.print(Markdown(content))
+    if open_app:
+        v.open_in_obsidian(name)
+
+
+@vault.command(name="open")
+@click.argument("name")
+@click.pass_context
+def vault_open(ctx, name):
+    """Open a note in Obsidian."""
+    from talos.obsidian import Vault
+
+    cfg = ctx.obj["config"]
+    if not cfg.obsidian_vault:
+        console.print("[err]no obsidian_vault configured[/]")
+        return
+    v = Vault(cfg.obsidian_vault)
+    if v.read(name) is None:
+        console.print(f"[err]not found: {name}[/]")
+        return
+    v.open_in_obsidian(name)
+    console.print(f"[ok]opened {name} in obsidian[/]")
 
 
 @vault.command(name="recent")
