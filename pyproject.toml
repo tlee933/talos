@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "talos"
 version = "0.1.0"
 description = "Local desktop AI for Linux + KDE Plasma"
-readme = "VISION.md"
+readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
 authors = [{ name = "tlee933" }]
