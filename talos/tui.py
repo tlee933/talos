@@ -17,16 +17,19 @@ console = Console(theme=THEME)
 
 
 async def run(config: Config):
-    console.print(f"\n[prompt]talos[/] [dim]v0.1 — type help or ctrl-c to quit[/]\n")
+    from talos import __version__
+
+    console.print(f"\n[prompt]⚙ talos {__version__}[/] [dim]— the bronze guardian[/]")
+    console.print(f"[dim]  type help or ctrl-c to quit[/]\n")
 
     agent = Agent(config.hivemind_url)
     try:
         health = await agent.health()
         status = "ok" if health.get("status") in ("ok", "healthy") else "unreachable"
         style = "ok" if status == "ok" else "err"
-        console.print(f"  [{style}]hivemind: {status}[/]")
+        console.print(f"  [{style}]hivemind[/] [dim]{config.hivemind_url}[/]")
         if config.obsidian_vault:
-            console.print(f"  [dim]vault: {config.obsidian_vault}[/]")
+            console.print(f"  [ok]vault[/]    [dim]{config.obsidian_vault}[/]")
         console.print()
 
         while True:
