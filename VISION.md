@@ -5,13 +5,57 @@ Local-first desktop AI for Fedora Atomic + KDE Plasma 6.
 Named after the bronze automaton from Greek mythology — an autonomous
 guardian that runs on your own hardware.
 
+```
+╭────────────────────────────╮  ╭─ system ──────────────────────────────────────────╮
+│                            │  │  hivemind    connected http://localhost:8090      │
+│  ╔╦╗╔═╗╦  ╔═╗╔═╗           │  │  model       HiveCoder-7B 61.3 tok/s online       │
+│   ║ ╠═╣║  ║ ║╚═╗           │  │  rag         ━━━━━━━━━━━━╌╌╌╌ 75% 73 queries      │
+│   ╩ ╩ ╩╩═╝╚═╝╚═╝           │  │  learning    ━━━━━━━━━━╌╌╌╌╌╌ 64% 32/50 samples   │
+│   v0.1.0 — the bronze      │  │              ~3.7d to next train · v0.9.1         │
+│ guardian                   │  │  gpu         ━━━━━━━━╌╌╌╌ 67% vram 59°C · 100%    │
+╰────────────────────────────╯  │  redis       cluster 4.26M · 99 sessions          │
+                                │  vault       found ~/Documents/Vault              │
+                                ╰───────────────────────────────────────────────────╯
+  arrows/history · tab-complete · !cmd for shell · ctrl-r search · F2 toggle stats
+```
+
 ## What it does
 
-- Agentic shell execution via local LLM (HiveCoder-7B through Hive-Mind)
-- Semantic RAG — the model knows your system, your projects, your preferences
-- Obsidian vault integration — search, read, create notes from the terminal
-- KDE desktop tools — notifications, clipboard, file search (Baloo), KDE Connect
-- Self-improving — every interaction feeds the continuous learning pipeline
+- **Agentic shell execution** — ask a question, Talos reasons through it,
+  proposes commands step-by-step, executes with your confirmation, and
+  summarizes results (Open Interpreter-style)
+- **Semantic RAG** — the model knows your system, your projects, your preferences
+- **Obsidian vault integration** — search, read, create notes from the terminal
+- **KDE desktop tools** — notifications, clipboard, file search (Baloo)
+- **Self-improving** — every interaction feeds the continuous learning pipeline
+
+## Interactive mode
+
+```
+▸ what gpu do I have and how much vram is free?
+
+  I'll check your GPU details and VRAM usage.
+
+╭─ step 1 ─────────────────────────────────╮
+│ rocm-smi --json                           │
+╰───────────────────────────────────────────╯
+  run? [y/n/a] y
+
+╭─ output ──────────────────────────────────╮
+│ Radeon AI PRO R9700 — 22.2/32.6 GB VRAM  │
+│ 2x llama-server: 13.0 GB + 6.8 GB        │
+╰───────────────────────────────────────────╯
+
+  analyzing...
+
+  You have ~10.4 GB VRAM free on your R9700.
+  Two llama-server instances are loaded (HiveCoder-7B + Qwen3-14B).
+```
+
+Confirmation options during execution:
+- **y** / **enter** — run the command
+- **n** — skip
+- **a** — auto-run all remaining steps
 
 ## Stack
 
@@ -19,13 +63,13 @@ guardian that runs on your own hardware.
 - **Desktop**: KDE Plasma 6
 - **LLM**: HiveCoder-7B (local, LoRA fine-tuned, GGUF via llama.cpp)
 - **Memory**: Hive-Mind (Redis cluster, semantic RAG, learning pipeline)
-- **TUI**: Rich (Python)
+- **TUI**: Rich + prompt_toolkit (Python)
 - **IPC**: D-Bus for KDE integration
 
 ## Usage
 
 ```bash
-talos                        # interactive REPL
+talos                        # interactive REPL (agentic mode)
 talos ask "free disk space?" # one-shot query
 talos do "kill zombie procs" # NL -> shell with confirmation
 talos status                 # check hivemind + vault connections
@@ -33,6 +77,25 @@ talos vault search "pytorch" # search obsidian notes
 talos vault recent           # recently modified notes
 talos vault daily            # open/create today's daily note
 ```
+
+### Interactive commands
+
+| Command  | Description                          |
+|----------|--------------------------------------|
+| `!cmd`   | Run a shell command directly         |
+| `stats`  | Toggle the system stats panel        |
+| `reset`  | Clear conversation history           |
+| `clear`  | Redraw banner with fresh stats       |
+| `help`   | Show all commands and keybindings    |
+
+### Keybindings
+
+| Key      | Action                               |
+|----------|--------------------------------------|
+| `F2`     | Toggle stats panel                   |
+| `↑/↓`   | History navigation                   |
+| `Ctrl-R` | Reverse history search               |
+| `Tab`    | Completion (commands, paths, execs)  |
 
 ## Configuration
 
@@ -49,7 +112,8 @@ confirm_commands: true
 ```
 talos CLI/TUI
     |
-    +-- agent.py ---- Hive-Mind HTTP API (RAG + LLM)
+    +-- agent.py ---- Hive-Mind HTTP API (RAG + LLM + multi-turn)
+    +-- banner.py --- startup banner with live system stats
     +-- shell.py ---- async subprocess execution
     +-- kde.py ------ notify-send, wl-clipboard, baloosearch
     +-- obsidian.py - vault filesystem access + obsidian:// URI
