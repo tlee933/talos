@@ -24,16 +24,13 @@ Current: [**v0.3.0**](https://github.com/tlee933/talos/releases/tag/v0.3.0) — 
 - [x] `context_injection` config toggle
 - [x] 55 unit tests (7 agent hivemind, 12 context, 3 completers, 2 config + existing)
 
-## Phase 2 Part 2: Learning & RAG (v0.3.x)
+## ~~Phase 2 Part 2: Learning & RAG (v0.3.x)~~ ✓
 
-### Learning feedback loop
-- Rate responses (thumbs up/down) → feeds `learning_queue_add`
-- Bad responses get negative training signal
-- Track which queries lead to successful command execution
-
-### RAG-enhanced queries
-- Semantic search across stored facts before sending to LLM
-- Auto-retrieve relevant context from previous sessions
+- [x] Auto-log interactions to Hive-Mind learning queue after agentic steps (fire-and-forget)
+- [x] Inline `+`/`-` rating after command execution → enriches learning signal
+- [x] `suggest` command — RAG gap analysis (hit rate, missed queries, suggested facts)
+- [x] `learning_queue_add` + `fact_suggestions` agent API methods
+- [x] 63 unit tests (5 learning, 2 agent hivemind, 1 completer + existing)
 
 ---
 
