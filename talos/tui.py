@@ -21,6 +21,7 @@ from rich.text import Text
 
 from talos.agent import Agent, ParsedResponse, parse_response
 from talos.config import Config
+from talos.context import gather_environment, expand_references_async
 from talos.theme import THEME, COLORS
 from talos import shell
 
@@ -69,6 +70,9 @@ class TalosCommandCompleter(Completer):
         "clear": "Clear screen",
         "stats": "Toggle system stats",
         "reset": "Reset conversation",
+        "remember": "Store a fact (remember key = value)",
+        "recall": "Recall stored facts",
+        "facts": "List all stored facts",
     }
 
     def get_completions(self, document, complete_event):
@@ -145,6 +149,52 @@ class ShellCompleter(Completer):
                         full,
                         start_position=-len(prefix),
                         display=display,
+                    )
+        except (OSError, PermissionError):
+            return
+
+
+class AtRefCompleter(Completer):
+    """Completes @file references against files in cwd."""
+
+    def get_completions(self, document, complete_event):
+        text = document.text_before_cursor
+        # Find the last @... token being typed
+        idx = text.rfind("@")
+        if idx == -1:
+            return
+
+        partial = text[idx + 1:]
+        if " " in partial:
+            return
+
+        # Special completions
+        for name in ("clip", "clipboard"):
+            if name.startswith(partial):
+                yield Completion("@" + name, start_position=-(len(partial) + 1), display=f"@{name}", display_meta="clipboard")
+
+        # File completions from cwd
+        p = Path(partial) if partial else Path(".")
+        if partial.endswith("/"):
+            parent = p
+            frag = ""
+        else:
+            parent = p.parent if partial else Path(".")
+            frag = p.name if partial else ""
+
+        try:
+            base = Path.cwd() / parent
+            for entry in base.iterdir():
+                name = entry.name
+                if name.startswith(".") and not frag.startswith("."):
+                    continue
+                if name.startswith(frag):
+                    suffix = "/" if entry.is_dir() else ""
+                    rel = str(parent / name) + suffix if str(parent) != "." else name + suffix
+                    yield Completion(
+                        "@" + rel,
+                        start_position=-(len(partial) + 1),
+                        display=f"@{rel}",
                     )
         except (OSError, PermissionError):
             return
@@ -252,13 +302,13 @@ def _render_summary(text: str):
 
 # --- Streaming display ---
 
-async def _stream_response(agent: Agent, message: str) -> ParsedResponse:
+async def _stream_response(agent: Agent, message: str, context: str | None = None) -> ParsedResponse:
     """Stream a chat response with live display, return ParsedResponse."""
     accumulated = []
     display_text = Text()
 
     with Live(display_text, console=console, refresh_per_second=15, transient=True) as live:
-        async for chunk in agent.stream_chat(message):
+        async for chunk in agent.stream_chat(message, context=context):
             accumulated.append(chunk)
             display_text.append(chunk, style="dim")
             live.update(display_text)
@@ -271,14 +321,14 @@ async def _stream_response(agent: Agent, message: str) -> ParsedResponse:
 
 
 async def _stream_feed_result(
-    agent: Agent, command: str, output_text: str
+    agent: Agent, command: str, output_text: str, context: str | None = None,
 ) -> ParsedResponse:
     """Stream the LLM's analysis of command output with live display."""
     accumulated = []
     display_text = Text()
 
     with Live(display_text, console=console, refresh_per_second=15, transient=True) as live:
-        async for chunk in agent.stream_feed_result(command, output_text):
+        async for chunk in agent.stream_feed_result(command, output_text, context=context):
             accumulated.append(chunk)
             display_text.append(chunk, style="dim")
             live.update(display_text)
@@ -292,7 +342,7 @@ async def _stream_feed_result(
 
 # --- Agentic loop ---
 
-async def _agentic_step(agent: Agent, parsed: ParsedResponse, session: PromptSession, config: Config):
+async def _agentic_step(agent: Agent, parsed: ParsedResponse, session: PromptSession, config: Config, context: str | None = None):
     """Process a parsed LLM response: show reasoning, execute commands, loop."""
     # Check for error sentinel
     if parsed.error:
@@ -360,7 +410,7 @@ async def _agentic_step(agent: Agent, parsed: ParsedResponse, session: PromptSes
             if len(output_text) > 4000:
                 output_text = output_text[:2000] + "\n...(truncated)...\n" + output_text[-1500:]
 
-            parsed = await _stream_feed_result(agent, block.command, output_text)
+            parsed = await _stream_feed_result(agent, block.command, output_text, context=context)
 
             # Check for error from streaming
             if parsed.error:
@@ -395,6 +445,14 @@ async def run(config: Config):
         cached = await show_banner(config, agent)
         stats_visible = True
 
+        # Session restore (best-effort)
+        try:
+            recalled = await agent.memory_recall()
+            if recalled.get("context"):
+                console.print("  [dim]session restored[/]\n")
+        except Exception:
+            pass
+
         # Stats toggle — shared between keybinding and main loop
         toggle = _StatsToggle()
 
@@ -410,7 +468,7 @@ async def run(config: Config):
 
         # Set up prompt_toolkit session
         HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
-        completer = merge_completers([TalosCommandCompleter(), ShellCompleter()])
+        completer = merge_completers([TalosCommandCompleter(), ShellCompleter(), AtRefCompleter()])
         session: PromptSession = PromptSession(
             history=FileHistory(str(HISTORY_PATH)),
             completer=completer,
@@ -465,6 +523,18 @@ async def run(config: Config):
                 console.print("  [dim]conversation reset[/]\n")
                 continue
 
+            # Hive-Mind commands
+            if line.startswith("remember "):
+                await _handle_remember(agent, line[9:])
+                continue
+            if line.startswith("recall"):
+                key = line[6:].strip() or None
+                await _handle_recall(agent, key)
+                continue
+            if line == "facts":
+                await _handle_recall(agent, None)
+                continue
+
             # ! prefix = direct shell (bypass LLM)
             if line.startswith("!"):
                 cmd = line[1:].strip()
@@ -477,39 +547,113 @@ async def run(config: Config):
                 continue
 
             # --- Agentic flow ---
-            parsed = await _stream_response(agent, line)
+            # Expand @file/@clip references
+            message, ref_context = await expand_references_async(line)
+
+            # Gather environment context
+            env_context = ""
+            if config.context_injection:
+                try:
+                    env_context = await gather_environment()
+                except Exception:
+                    pass
+
+            # Combine contexts
+            ctx_parts = [p for p in (env_context, ref_context) if p]
+            full_context = "\n\n".join(ctx_parts) if ctx_parts else None
+
+            parsed = await _stream_response(agent, message, context=full_context)
 
             # Handle connection errors with retry
             if parsed.error:
                 console.print(f"\n  [err]hivemind unreachable — retrying in 3s...[/]")
                 disconnected = True
                 await asyncio.sleep(3)
-                parsed = await _stream_response(agent, line)
+                parsed = await _stream_response(agent, message, context=full_context)
                 if parsed.error:
                     console.print(f"\n  [err]{parsed.error}[/]\n")
                     continue
                 disconnected = False
 
             disconnected = False
-            await _agentic_step(agent, parsed, session, config)
+            await _agentic_step(agent, parsed, session, config, context=full_context)
 
     finally:
+        # Session save (best-effort)
+        try:
+            if agent.history:
+                last_user = next(
+                    (t.content for t in reversed(agent.history) if t.role == "user"),
+                    "",
+                )
+                if last_user:
+                    await agent.memory_store(f"Last topic: {last_user[:200]}")
+        except Exception:
+            pass
         await agent.close()
+
+
+async def _handle_remember(agent: Agent, text: str):
+    """Parse 'key = value' or auto-key from text, store via Hive-Mind."""
+    if "=" in text:
+        key, _, value = text.partition("=")
+        key = key.strip()
+        value = value.strip()
+    else:
+        words = text.split()
+        key = "_".join(words[:3]).lower()
+        value = text
+
+    if not key or not value:
+        console.print("  [err]usage: remember key = value[/]\n")
+        return
+
+    result = await agent.fact_store(key, value)
+    if "error" in result:
+        console.print(f"  [err]{result['error']}[/]\n")
+    else:
+        console.print(f"  [ok]remembered:[/] [accent]{key}[/] = {value}\n")
+
+
+async def _handle_recall(agent: Agent, key: str | None):
+    """Recall a specific fact or list all facts."""
+    result = await agent.fact_get(key)
+    if "error" in result:
+        console.print(f"  [err]{result['error']}[/]\n")
+        return
+
+    if key:
+        value = result.get("value", "(not found)")
+        console.print(f"  [accent]{key}[/] = {value}\n")
+    else:
+        facts = result.get("facts", {})
+        if not facts:
+            console.print("  [dim]no facts stored[/]\n")
+            return
+        for k, v in facts.items():
+            console.print(f"  [accent]{k}[/] = {v}")
+        console.print()
 
 
 def _help():
     console.print("""
   [accent]<query>[/]        ask talos anything (agentic mode)
   [accent]!<cmd>[/]         run a shell command directly
+  [accent]remember[/]       store a fact (remember key = value)
+  [accent]recall[/]         recall stored facts (recall [key])
+  [accent]facts[/]          list all stored facts
   [accent]stats[/]          toggle system stats panel
   [accent]reset[/]          clear conversation history
   [accent]clear[/]          redraw banner
   [accent]exit[/]           quit
 
+  [dim]@file.py[/]       inject file content into query
+  [dim]@clip[/]          inject clipboard content into query
+
   [dim]F2[/]             toggle stats panel
   [dim]\u2191/\u2193[/]            history navigation
   [dim]ctrl-r[/]         reverse history search
-  [dim]tab[/]            completion (commands, paths, executables)
+  [dim]tab[/]            completion (commands, paths, @files)
 
   [dim]during execution:[/]
   [dim]y/enter[/]        run the command

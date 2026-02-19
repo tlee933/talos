@@ -50,3 +50,24 @@ def test_space_stops_completion():
     c = TalosCommandCompleter()
     results = _complete(c, "help something")
     assert len(results) == 0
+
+
+def test_remember_in_completions():
+    """remember command should appear in completions."""
+    c = TalosCommandCompleter()
+    results = _complete(c, "rem")
+    assert "remember" in results
+
+
+def test_recall_in_completions():
+    """recall command should appear in completions."""
+    c = TalosCommandCompleter()
+    results = _complete(c, "rec")
+    assert "recall" in results
+
+
+def test_facts_in_completions():
+    """facts command should appear in completions."""
+    c = TalosCommandCompleter()
+    results = _complete(c, "fac")
+    assert "facts" in results

@@ -60,3 +60,19 @@ def test_unknown_keys_ignored():
         cfg = Config.load(Path(f.name))
 
     assert cfg.hivemind_url == "http://localhost:8090"
+
+
+def test_context_injection_default():
+    """context_injection should default to True."""
+    cfg = Config.load(Path("/nonexistent/path/config.yaml"))
+    assert cfg.context_injection is True
+
+
+def test_context_injection_override():
+    """context_injection can be set via YAML."""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+        f.write("context_injection: false\n")
+        f.flush()
+        cfg = Config.load(Path(f.name))
+
+    assert cfg.context_injection is False

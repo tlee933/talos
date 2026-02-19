@@ -95,18 +95,21 @@ class Agent:
         self.history: list[Turn] = []
         self.max_history = 20  # keep last N turns to fit context
 
-    def _messages(self, system: str | None = None) -> list[dict]:
-        msgs = [{"role": "system", "content": system or SYSTEM_PROMPT}]
+    def _messages(self, system: str | None = None, context: str | None = None) -> list[dict]:
+        sys_text = system or SYSTEM_PROMPT
+        if context:
+            sys_text = f"{sys_text}\n\n{context}"
+        msgs = [{"role": "system", "content": sys_text}]
         # Trim to max_history (keep most recent)
         history = self.history[-self.max_history:]
         for turn in history:
             msgs.append({"role": turn.role, "content": turn.content})
         return msgs
 
-    def _payload(self, system: str | None = None, stream: bool = False) -> dict:
+    def _payload(self, system: str | None = None, stream: bool = False, context: str | None = None) -> dict:
         payload = {
             "model": "hivecoder-7b",
-            "messages": self._messages(system),
+            "messages": self._messages(system, context=context),
             "temperature": 0.7,
             "max_tokens": 1024,
         }
@@ -116,13 +119,13 @@ class Agent:
 
     # --- Non-streaming (fallback) ---
 
-    async def chat(self, message: str, system: str | None = None) -> ParsedResponse:
+    async def chat(self, message: str, system: str | None = None, context: str | None = None) -> ParsedResponse:
         """Send a message, get a parsed response. Maintains conversation history."""
         self.history.append(Turn(role="user", content=message))
         try:
             resp = await self.http.post(
                 "/v1/chat/completions",
-                json=self._payload(system),
+                json=self._payload(system, context=context),
             )
             resp.raise_for_status()
         except _CONNECT_ERRORS as exc:
@@ -132,14 +135,14 @@ class Agent:
         self.history.append(Turn(role="assistant", content=content))
         return parse_response(content)
 
-    async def feed_result(self, command: str, result: str, system: str | None = None) -> ParsedResponse:
+    async def feed_result(self, command: str, result: str, system: str | None = None, context: str | None = None) -> ParsedResponse:
         """Feed command output back to the LLM for continued reasoning."""
         output_msg = f"Command: `{command}`\nOutput:\n```\n{result}\n```"
         self.history.append(Turn(role="user", content=output_msg))
         try:
             resp = await self.http.post(
                 "/v1/chat/completions",
-                json=self._payload(system),
+                json=self._payload(system, context=context),
             )
             resp.raise_for_status()
         except _CONNECT_ERRORS as exc:
@@ -151,7 +154,7 @@ class Agent:
 
     # --- Streaming ---
 
-    async def stream_chat(self, message: str, system: str | None = None) -> AsyncIterator[str]:
+    async def stream_chat(self, message: str, system: str | None = None, context: str | None = None) -> AsyncIterator[str]:
         """Stream a chat response, yielding delta content strings.
 
         Accumulates the full response and appends to history when done.
@@ -163,7 +166,7 @@ class Agent:
             async with self.http.stream(
                 "POST",
                 "/v1/chat/completions",
-                json=self._payload(system, stream=True),
+                json=self._payload(system, stream=True, context=context),
             ) as resp:
                 resp.raise_for_status()
                 async for line in resp.aiter_lines():
@@ -185,7 +188,7 @@ class Agent:
             self.history.append(Turn(role="assistant", content=full_text))
 
     async def stream_feed_result(
-        self, command: str, result: str, system: str | None = None
+        self, command: str, result: str, system: str | None = None, context: str | None = None,
     ) -> AsyncIterator[str]:
         """Stream the LLM's analysis of command output."""
         output_msg = f"Command: `{command}`\nOutput:\n```\n{result}\n```"
@@ -196,7 +199,7 @@ class Agent:
             async with self.http.stream(
                 "POST",
                 "/v1/chat/completions",
-                json=self._payload(system, stream=True),
+                json=self._payload(system, stream=True, context=context),
             ) as resp:
                 resp.raise_for_status()
                 async for line in resp.aiter_lines():
@@ -215,6 +218,51 @@ class Agent:
         full_text = "".join(accumulated)
         if full_text:
             self.history.append(Turn(role="assistant", content=full_text))
+
+    # --- Hive-Mind tool API ---
+
+    async def fact_store(self, key: str, value: str) -> dict:
+        """Store a fact via Hive-Mind."""
+        try:
+            resp = await self.http.post("/fact/store", json={"key": key, "value": value})
+            resp.raise_for_status()
+            return resp.json()
+        except _CONNECT_ERRORS as exc:
+            return {"error": str(exc)}
+
+    async def fact_get(self, key: str | None = None) -> dict:
+        """Retrieve a fact (or all facts) via Hive-Mind."""
+        try:
+            payload = {"key": key} if key else {}
+            resp = await self.http.post("/fact/get", json=payload)
+            resp.raise_for_status()
+            return resp.json()
+        except _CONNECT_ERRORS as exc:
+            return {"error": str(exc)}
+
+    async def memory_store(self, context: str, files: list[str] | None = None, task: str | None = None) -> dict:
+        """Store session context via Hive-Mind."""
+        try:
+            payload: dict = {"context": context}
+            if files:
+                payload["files"] = files
+            if task:
+                payload["task"] = task
+            resp = await self.http.post("/memory/store", json=payload)
+            resp.raise_for_status()
+            return resp.json()
+        except _CONNECT_ERRORS as exc:
+            return {"error": str(exc)}
+
+    async def memory_recall(self, session_id: str | None = None) -> dict:
+        """Recall session context from Hive-Mind."""
+        try:
+            payload = {"session_id": session_id} if session_id else {}
+            resp = await self.http.post("/memory/recall", json=payload)
+            resp.raise_for_status()
+            return resp.json()
+        except _CONNECT_ERRORS as exc:
+            return {"error": str(exc)}
 
     # --- Connection health ---
 
