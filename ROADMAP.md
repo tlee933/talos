@@ -1,29 +1,16 @@
 # Talos Roadmap
 
-Current: **v0.1.0** — agentic TUI with Hive-Mind backend
+Current: **v0.2.0** — streaming, error recovery, dangerous command detection
 
 ---
 
-## Phase 1: Core Polish (v0.2)
+## ~~Phase 1: Core Polish (v0.2)~~ ✓
 
-### Streaming responses
-- Stream LLM output token-by-token instead of waiting for full completion
-- Show reasoning as it arrives, not after the full response
-- Use Hive-Mind's `/v1/chat/completions` with `stream: true`
-
-### Confirm mode improvements
-- `talos do` should use the agentic loop (not just single-command)
-- Persistent confirm preference in config (`confirm_commands: always | smart | never`)
-- Dangerous command detection — auto-flag `rm -rf`, `dd`, `mkfs`, etc.
-
-### Error recovery
-- Retry on timeout with backoff
-- Graceful handling when Hive-Mind goes down mid-conversation
-- Reconnect indicator in prompt
-
-### Tests
-- Unit tests for response parser, completers, config loader
-- Integration test for agentic loop with mock LLM responses
+- [x] Stream LLM output token-by-token via SSE with Rich Live display
+- [x] `talos do` wired into full agentic step-through loop
+- [x] `confirm_commands: always | smart | never` config with dangerous command detection
+- [x] Graceful error recovery — retry on disconnect, red prompt when offline
+- [x] 32 unit tests for parser, config, completers, dangerous patterns
 
 ---
 
