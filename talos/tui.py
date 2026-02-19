@@ -13,12 +13,13 @@ from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.keys import Keys
 from prompt_toolkit.styles import Style as PTStyle
 from rich.console import Console
+from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.text import Text
 
-from talos.agent import Agent, ParsedResponse
+from talos.agent import Agent, ParsedResponse, parse_response
 from talos.config import Config
 from talos.theme import THEME, COLORS
 from talos import shell
@@ -31,6 +32,29 @@ HISTORY_PATH = Path.home() / ".local" / "share" / "talos" / "history"
 
 # Max agentic loop iterations (safety valve)
 MAX_STEPS = 8
+
+# Dangerous command patterns — always prompt in smart mode, warn in all modes
+DANGEROUS_PATTERNS = [
+    "rm -rf",
+    "dd ",
+    "mkfs",
+    "fdisk",
+    "parted",
+    "systemctl stop",
+    "kill -9",
+    "chmod 777",
+    "> /dev/",
+    ":(){ :|:& };:",
+]
+
+
+def is_dangerous(command: str) -> bool:
+    """Check if a command matches any dangerous pattern."""
+    cmd = command.strip()
+    for pattern in DANGEROUS_PATTERNS:
+        if pattern in cmd:
+            return True
+    return False
 
 
 # --- Completers ---
@@ -129,11 +153,14 @@ class ShellCompleter(Completer):
 # prompt_toolkit style to match our bronze theme
 PT_STYLE = PTStyle.from_dict({
     "prompt": "#CD7F32 bold",
+    "prompt.err": "#C1440E bold",
     "": "#e0d6c8",
 })
 
 
-def _make_prompt():
+def _make_prompt(disconnected: bool = False):
+    if disconnected:
+        return HTML("<prompt.err>\u25b8 </prompt.err>")
     return HTML("<prompt>\u25b8 </prompt>")
 
 
@@ -162,15 +189,16 @@ def _render_reasoning(text: str):
         console.print(f"  [dim]{line}[/]")
 
 
-def _render_command(cmd: str, step: int):
+def _render_command(cmd: str, step: int, dangerous: bool = False):
     """Show a command block Open-Interpreter style."""
     console.print()
+    warn = " [err]\u26a0 dangerous[/]" if dangerous else ""
     console.print(
         Panel(
             Syntax(cmd, "bash", theme="monokai", line_numbers=False),
-            title=f"[accent]step {step}[/]",
+            title=f"[accent]step {step}[/]{warn}",
             title_align="left",
-            border_style=COLORS["bronze"],
+            border_style=COLORS["oxidized"] if dangerous else COLORS["bronze"],
             padding=(0, 1),
         )
     )
@@ -222,11 +250,57 @@ def _render_summary(text: str):
     console.print()
 
 
+# --- Streaming display ---
+
+async def _stream_response(agent: Agent, message: str) -> ParsedResponse:
+    """Stream a chat response with live display, return ParsedResponse."""
+    accumulated = []
+    display_text = Text()
+
+    with Live(display_text, console=console, refresh_per_second=15, transient=True) as live:
+        async for chunk in agent.stream_chat(message):
+            accumulated.append(chunk)
+            display_text.append(chunk, style="dim")
+            live.update(display_text)
+
+    full_text = "".join(accumulated)
+    if not full_text:
+        return ParsedResponse(segments=[("(no response)", None)], raw="")
+
+    return parse_response(full_text)
+
+
+async def _stream_feed_result(
+    agent: Agent, command: str, output_text: str
+) -> ParsedResponse:
+    """Stream the LLM's analysis of command output with live display."""
+    accumulated = []
+    display_text = Text()
+
+    with Live(display_text, console=console, refresh_per_second=15, transient=True) as live:
+        async for chunk in agent.stream_feed_result(command, output_text):
+            accumulated.append(chunk)
+            display_text.append(chunk, style="dim")
+            live.update(display_text)
+
+    full_text = "".join(accumulated)
+    if not full_text:
+        return ParsedResponse(segments=[("(no response)", None)], raw="")
+
+    return parse_response(full_text)
+
+
 # --- Agentic loop ---
 
 async def _agentic_step(agent: Agent, parsed: ParsedResponse, session: PromptSession, config: Config):
     """Process a parsed LLM response: show reasoning, execute commands, loop."""
+    # Check for error sentinel
+    if parsed.error:
+        console.print(f"\n  [err]{parsed.error}[/]\n")
+        return
+
     auto_run = False
+    confirm_mode = config.confirm_commands
     step = 0
 
     for _iteration in range(MAX_STEPS):
@@ -241,10 +315,19 @@ async def _agentic_step(agent: Agent, parsed: ParsedResponse, session: PromptSes
 
             has_code = True
             step += 1
-            _render_command(block.command, step)
+            dangerous = is_dangerous(block.command)
+            _render_command(block.command, step, dangerous=dangerous)
 
-            # Ask for confirmation
-            if not auto_run:
+            # Determine whether to prompt
+            should_prompt = True
+            if auto_run and not dangerous:
+                should_prompt = False
+            elif confirm_mode == "never" and not dangerous:
+                should_prompt = False
+            elif confirm_mode == "smart" and not dangerous and not auto_run:
+                should_prompt = False
+
+            if should_prompt:
                 try:
                     answer = await asyncio.to_thread(
                         session.prompt, _confirm_prompt()
@@ -277,8 +360,12 @@ async def _agentic_step(agent: Agent, parsed: ParsedResponse, session: PromptSes
             if len(output_text) > 4000:
                 output_text = output_text[:2000] + "\n...(truncated)...\n" + output_text[-1500:]
 
-            with console.status("  [dim]analyzing...[/]", spinner="dots"):
-                parsed = await agent.feed_result(block.command, output_text)
+            parsed = await _stream_feed_result(agent, block.command, output_text)
+
+            # Check for error from streaming
+            if parsed.error:
+                console.print(f"\n  [err]{parsed.error}[/]\n")
+                return
 
             # Continue the outer loop with new parsed response
             break
@@ -302,6 +389,7 @@ async def run(config: Config):
     from talos.banner import show as show_banner, render_minimal, refresh as refresh_banner
 
     agent = Agent(config.hivemind_url)
+    disconnected = False
     try:
         # Clear screen and show full banner with live stats
         cached = await show_banner(config, agent)
@@ -334,7 +422,9 @@ async def run(config: Config):
 
         while True:
             try:
-                line = await asyncio.to_thread(session.prompt, _make_prompt())
+                line = await asyncio.to_thread(
+                    session.prompt, _make_prompt(disconnected=disconnected)
+                )
             except (EOFError, KeyboardInterrupt):
                 console.print()
                 break
@@ -387,9 +477,20 @@ async def run(config: Config):
                 continue
 
             # --- Agentic flow ---
-            with console.status("  [dim]thinking...[/]", spinner="dots"):
-                parsed = await agent.chat(line)
+            parsed = await _stream_response(agent, line)
 
+            # Handle connection errors with retry
+            if parsed.error:
+                console.print(f"\n  [err]hivemind unreachable — retrying in 3s...[/]")
+                disconnected = True
+                await asyncio.sleep(3)
+                parsed = await _stream_response(agent, line)
+                if parsed.error:
+                    console.print(f"\n  [err]{parsed.error}[/]\n")
+                    continue
+                disconnected = False
+
+            disconnected = False
             await _agentic_step(agent, parsed, session, config)
 
     finally:
@@ -406,7 +507,7 @@ def _help():
   [accent]exit[/]           quit
 
   [dim]F2[/]             toggle stats panel
-  [dim]↑/↓[/]            history navigation
+  [dim]\u2191/\u2193[/]            history navigation
   [dim]ctrl-r[/]         reverse history search
   [dim]tab[/]            completion (commands, paths, executables)
 

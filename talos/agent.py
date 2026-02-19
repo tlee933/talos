@@ -1,5 +1,7 @@
+import json
 import re
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 
 import httpx
@@ -42,6 +44,7 @@ class ParsedResponse:
     """LLM response split into reasoning segments and code blocks."""
     segments: list  # list of (str, CodeBlock | None) tuples
     raw: str
+    error: str = ""  # non-empty if this is an error sentinel
 
 
 _CODE_BLOCK_RE = re.compile(
@@ -78,6 +81,14 @@ def parse_response(text: str) -> ParsedResponse:
     return ParsedResponse(segments=segments, raw=text)
 
 
+def _error_response(msg: str) -> ParsedResponse:
+    """Create a sentinel ParsedResponse for connection errors."""
+    return ParsedResponse(segments=[(msg, None)], raw="", error=msg)
+
+
+_CONNECT_ERRORS = (httpx.ConnectError, httpx.ReadTimeout, httpx.HTTPStatusError)
+
+
 class Agent:
     def __init__(self, base_url: str):
         self.http = httpx.AsyncClient(base_url=base_url, timeout=120.0)
@@ -92,20 +103,31 @@ class Agent:
             msgs.append({"role": turn.role, "content": turn.content})
         return msgs
 
+    def _payload(self, system: str | None = None, stream: bool = False) -> dict:
+        payload = {
+            "model": "hivecoder-7b",
+            "messages": self._messages(system),
+            "temperature": 0.7,
+            "max_tokens": 1024,
+        }
+        if stream:
+            payload["stream"] = True
+        return payload
+
+    # --- Non-streaming (fallback) ---
+
     async def chat(self, message: str, system: str | None = None) -> ParsedResponse:
         """Send a message, get a parsed response. Maintains conversation history."""
         self.history.append(Turn(role="user", content=message))
+        try:
+            resp = await self.http.post(
+                "/v1/chat/completions",
+                json=self._payload(system),
+            )
+            resp.raise_for_status()
+        except _CONNECT_ERRORS as exc:
+            return _error_response(f"hivemind unreachable: {exc}")
 
-        resp = await self.http.post(
-            "/v1/chat/completions",
-            json={
-                "model": "hivecoder-7b",
-                "messages": self._messages(system),
-                "temperature": 0.7,
-                "max_tokens": 1024,
-            },
-        )
-        resp.raise_for_status()
         content = resp.json()["choices"][0]["message"]["content"]
         self.history.append(Turn(role="assistant", content=content))
         return parse_response(content)
@@ -114,20 +136,96 @@ class Agent:
         """Feed command output back to the LLM for continued reasoning."""
         output_msg = f"Command: `{command}`\nOutput:\n```\n{result}\n```"
         self.history.append(Turn(role="user", content=output_msg))
+        try:
+            resp = await self.http.post(
+                "/v1/chat/completions",
+                json=self._payload(system),
+            )
+            resp.raise_for_status()
+        except _CONNECT_ERRORS as exc:
+            return _error_response(f"hivemind unreachable: {exc}")
 
-        resp = await self.http.post(
-            "/v1/chat/completions",
-            json={
-                "model": "hivecoder-7b",
-                "messages": self._messages(system),
-                "temperature": 0.7,
-                "max_tokens": 1024,
-            },
-        )
-        resp.raise_for_status()
         content = resp.json()["choices"][0]["message"]["content"]
         self.history.append(Turn(role="assistant", content=content))
         return parse_response(content)
+
+    # --- Streaming ---
+
+    async def stream_chat(self, message: str, system: str | None = None) -> AsyncIterator[str]:
+        """Stream a chat response, yielding delta content strings.
+
+        Accumulates the full response and appends to history when done.
+        """
+        self.history.append(Turn(role="user", content=message))
+        accumulated = []
+
+        try:
+            async with self.http.stream(
+                "POST",
+                "/v1/chat/completions",
+                json=self._payload(system, stream=True),
+            ) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    chunk = _parse_sse_line(line)
+                    if chunk is None:
+                        continue
+                    if chunk == "":
+                        # Stream done
+                        break
+                    accumulated.append(chunk)
+                    yield chunk
+        except _CONNECT_ERRORS as exc:
+            error_msg = f"\n[hivemind unreachable: {exc}]"
+            accumulated.append(error_msg)
+            yield error_msg
+
+        full_text = "".join(accumulated)
+        if full_text:
+            self.history.append(Turn(role="assistant", content=full_text))
+
+    async def stream_feed_result(
+        self, command: str, result: str, system: str | None = None
+    ) -> AsyncIterator[str]:
+        """Stream the LLM's analysis of command output."""
+        output_msg = f"Command: `{command}`\nOutput:\n```\n{result}\n```"
+        self.history.append(Turn(role="user", content=output_msg))
+        accumulated = []
+
+        try:
+            async with self.http.stream(
+                "POST",
+                "/v1/chat/completions",
+                json=self._payload(system, stream=True),
+            ) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    chunk = _parse_sse_line(line)
+                    if chunk is None:
+                        continue
+                    if chunk == "":
+                        break
+                    accumulated.append(chunk)
+                    yield chunk
+        except _CONNECT_ERRORS as exc:
+            error_msg = f"\n[hivemind unreachable: {exc}]"
+            accumulated.append(error_msg)
+            yield error_msg
+
+        full_text = "".join(accumulated)
+        if full_text:
+            self.history.append(Turn(role="assistant", content=full_text))
+
+    # --- Connection health ---
+
+    @property
+    async def connected(self) -> bool:
+        """Quick health check — is Hive-Mind reachable?"""
+        try:
+            resp = await self.http.get("/health", timeout=3.0)
+            return resp.status_code == 200
+        except Exception:
+            return False
 
     def reset(self):
         """Clear conversation history."""
@@ -172,3 +270,41 @@ class Agent:
 
     async def close(self):
         await self.http.aclose()
+
+
+def _parse_sse_line(line: str) -> str | None:
+    """Parse a single SSE line from llama-server.
+
+    Returns:
+        - content string (may be empty for keep-alive)
+        - "" (empty string) on stream end ([DONE] or finish_reason: stop)
+        - None for non-data lines (comments, blank lines)
+    """
+    line = line.strip()
+    if not line or line.startswith(":"):
+        return None
+    if not line.startswith("data: "):
+        return None
+
+    payload = line[6:]  # strip "data: "
+
+    if payload.strip() == "[DONE]":
+        return ""
+
+    try:
+        data = json.loads(payload)
+    except json.JSONDecodeError:
+        return None
+
+    choices = data.get("choices", [])
+    if not choices:
+        return None
+
+    choice = choices[0]
+
+    # Check finish_reason
+    if choice.get("finish_reason") in ("stop", "length"):
+        return ""
+
+    delta = choice.get("delta", {})
+    return delta.get("content", "")

@@ -44,25 +44,22 @@ def ask(ctx, query):
 @click.argument("task", nargs=-1, required=True)
 @click.pass_context
 def do(ctx, task):
-    """Natural language to shell command (with confirmation)."""
+    """Run a task with agentic step-through execution."""
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.styles import Style as PTStyle
     from talos.agent import Agent
-    from talos import shell
+    from talos.tui import _stream_response, _agentic_step, PT_STYLE
 
     async def _run():
-        agent = Agent(ctx.obj["config"].hivemind_url)
+        cfg = ctx.obj["config"]
+        agent = Agent(cfg.hivemind_url)
+        session = PromptSession(style=PT_STYLE)
         try:
-            cmd = await agent.chat(
-                f"Output only the shell command, no explanation: {' '.join(task)}"
-            )
-            cmd = cmd.strip().removeprefix("```bash").removeprefix("```").removesuffix("```").strip()
-            console.print(f"[ok]{cmd}[/]")
-            if click.confirm("run?"):
-                r = await shell.run(cmd)
-                if r.stdout:
-                    console.print(r.stdout.rstrip())
-                if r.stderr:
-                    console.print(f"[err]{r.stderr.rstrip()}[/]")
-                console.print(f"[dim]exit {r.code}[/]")
+            parsed = await _stream_response(agent, " ".join(task))
+            if parsed.error:
+                console.print(f"[err]{parsed.error}[/]")
+                return
+            await _agentic_step(agent, parsed, session, cfg)
         finally:
             await agent.close()
 

@@ -8,7 +8,7 @@ import yaml
 class Config:
     hivemind_url: str = "http://localhost:8090"
     obsidian_vault: str = ""
-    confirm_commands: bool = True
+    confirm_commands: str = "always"  # always | smart | never
     enabled_tools: list[str] = field(
         default_factory=lambda: ["shell", "notify", "clipboard", "files", "obsidian"]
     )
