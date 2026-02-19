@@ -1,6 +1,6 @@
 # Talos Roadmap
 
-Current: **v0.3.0** — Hive-Mind integration, context injection, session persistence
+Current: [**v0.3.0**](https://github.com/tlee933/talos/releases/tag/v0.3.0) — Hive-Mind integration, context injection, session persistence
 
 ---
 
