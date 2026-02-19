@@ -71,3 +71,10 @@ def test_facts_in_completions():
     c = TalosCommandCompleter()
     results = _complete(c, "fac")
     assert "facts" in results
+
+
+def test_suggest_in_completions():
+    """suggest command should appear in completions."""
+    c = TalosCommandCompleter()
+    results = _complete(c, "sug")
+    assert "suggest" in results

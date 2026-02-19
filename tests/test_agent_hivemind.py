@@ -22,6 +22,23 @@ def _mock_handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(200, json={"key": key, "value": "test-value"})
         return httpx.Response(200, json={"facts": {"os": "fedora", "gpu": "amd"}})
 
+    if path == "/learning/queue/add":
+        interaction = body.get("interaction", {})
+        return httpx.Response(200, json={"status": "ok", "queued": True, "query": interaction.get("user_query", "")})
+
+    if path == "/fact/suggestions":
+        return httpx.Response(200, json={
+            "hit_rate": 0.72,
+            "retrieval_methods": {"semantic": 18, "keyword": 7},
+            "missed_queries": [
+                {"query": "how to resize a btrfs partition"},
+                {"query": "systemd timer syntax"},
+            ],
+            "suggested_topics": [
+                {"key": "btrfs_resize", "value": "btrfs filesystem resize ..."},
+            ],
+        })
+
     if path == "/memory/store":
         return httpx.Response(200, json={"status": "ok", "session_id": "abc123"})
 
@@ -86,6 +103,27 @@ def test_fact_store_error():
     a.http = httpx.AsyncClient(transport=transport, base_url="http://localhost:8090")
     result = asyncio.run(a.fact_store("key", "val"))
     assert "error" in result
+
+
+def test_learning_queue_add():
+    agent = _make_agent()
+    interaction = {
+        "user_query": "list files",
+        "commands": [{"command": "ls", "success": True, "exit_code": 0}],
+        "success": True,
+    }
+    result = asyncio.run(agent.learning_queue_add(interaction))
+    assert result["status"] == "ok"
+    assert result["queued"] is True
+
+
+def test_fact_suggestions():
+    agent = _make_agent()
+    result = asyncio.run(agent.fact_suggestions(limit=5))
+    assert "hit_rate" in result
+    assert result["hit_rate"] == 0.72
+    assert len(result["missed_queries"]) == 2
+    assert len(result["suggested_topics"]) == 1
 
 
 def test_context_threading():

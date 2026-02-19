@@ -73,6 +73,7 @@ class TalosCommandCompleter(Completer):
         "remember": "Store a fact (remember key = value)",
         "recall": "Recall stored facts",
         "facts": "List all stored facts",
+        "suggest": "RAG gap analysis — missed queries & suggestions",
     }
 
     def get_completions(self, document, complete_event):
@@ -342,20 +343,38 @@ async def _stream_feed_result(
 
 # --- Agentic loop ---
 
-async def _agentic_step(agent: Agent, parsed: ParsedResponse, session: PromptSession, config: Config, context: str | None = None):
-    """Process a parsed LLM response: show reasoning, execute commands, loop."""
+def build_interaction(query: str, commands: list[dict], response_summary: str = "") -> dict | None:
+    """Build a learning-queue interaction dict from agentic step data.
+
+    Returns None if no commands were executed (pure-reasoning query).
+    """
+    if not commands:
+        return None
+    return {
+        "user_query": query,
+        "commands": commands,
+        "response_summary": response_summary[:500],
+        "success": all(c.get("success", False) for c in commands),
+    }
+
+
+async def _agentic_step(agent: Agent, parsed: ParsedResponse, session: PromptSession, config: Config, context: str | None = None, query: str = "") -> dict | None:
+    """Process a parsed LLM response: show reasoning, execute commands, loop.
+
+    Returns an interaction dict (for learning queue) if commands were executed,
+    or None for pure-reasoning responses.
+    """
     # Check for error sentinel
     if parsed.error:
         console.print(f"\n  [err]{parsed.error}[/]\n")
-        return
+        return None
 
     auto_run = False
     confirm_mode = config.confirm_commands
     step = 0
+    executed_commands: list[dict] = []
 
     for _iteration in range(MAX_STEPS):
-        has_code = False
-
         for text, block in parsed.segments:
             if text:
                 _render_reasoning(text)
@@ -363,7 +382,6 @@ async def _agentic_step(agent: Agent, parsed: ParsedResponse, session: PromptSes
             if block is None:
                 continue
 
-            has_code = True
             step += 1
             dangerous = is_dangerous(block.command)
             _render_command(block.command, step, dangerous=dangerous)
@@ -398,6 +416,11 @@ async def _agentic_step(agent: Agent, parsed: ParsedResponse, session: PromptSes
                 result = await shell.run(block.command)
 
             _render_output(result, block.command)
+            executed_commands.append({
+                "command": block.command,
+                "success": result.ok,
+                "exit_code": result.code,
+            })
 
             # Feed result back to LLM for continued reasoning
             output_text = ""
@@ -415,7 +438,7 @@ async def _agentic_step(agent: Agent, parsed: ParsedResponse, session: PromptSes
             # Check for error from streaming
             if parsed.error:
                 console.print(f"\n  [err]{parsed.error}[/]\n")
-                return
+                return build_interaction(query, executed_commands)
 
             # Continue the outer loop with new parsed response
             break
@@ -427,10 +450,11 @@ async def _agentic_step(agent: Agent, parsed: ParsedResponse, session: PromptSes
             )
             if final_text:
                 _render_summary(final_text)
-            return
+            return build_interaction(query, executed_commands, final_text)
 
     # Safety: max steps reached
     console.print(f"\n  [dim]reached max {MAX_STEPS} steps[/]\n")
+    return build_interaction(query, executed_commands)
 
 
 # --- Main REPL ---
@@ -534,6 +558,9 @@ async def run(config: Config):
             if line == "facts":
                 await _handle_recall(agent, None)
                 continue
+            if line == "suggest":
+                await _handle_suggest(agent)
+                continue
 
             # ! prefix = direct shell (bypass LLM)
             if line.startswith("!"):
@@ -576,7 +603,59 @@ async def run(config: Config):
                 disconnected = False
 
             disconnected = False
-            await _agentic_step(agent, parsed, session, config, context=full_context)
+            interaction = await _agentic_step(agent, parsed, session, config, context=full_context, query=message)
+
+            # Log interaction + offer rating if commands were executed
+            if interaction:
+                asyncio.create_task(agent.learning_queue_add(interaction))
+
+                # Inline rating hint
+                console.print("  [dim]+/- to rate \u00b7 enter to skip[/]")
+                try:
+                    rating_input = await asyncio.to_thread(
+                        session.prompt, _make_prompt()
+                    )
+                except (EOFError, KeyboardInterrupt):
+                    rating_input = ""
+
+                rating_input = rating_input.strip()
+                if rating_input in ("+", "\U0001f44d"):
+                    interaction["rating"] = "positive"
+                    asyncio.create_task(agent.learning_queue_add(interaction))
+                    console.print("  [dim]\U0001f44d logged[/]\n")
+                    continue
+                elif rating_input in ("-", "\U0001f44e"):
+                    interaction["rating"] = "negative"
+                    asyncio.create_task(agent.learning_queue_add(interaction))
+                    console.print("  [dim]\U0001f44e logged[/]\n")
+                    continue
+                elif rating_input:
+                    # Not a rating — treat as a new query, re-enter dispatch
+                    # Push it back by setting line and falling through
+                    line = rating_input
+                    # Re-dispatch: check for commands first
+                    if line in ("exit", "quit", "q"):
+                        break
+                    if line == "help":
+                        _help()
+                        continue
+                    # Otherwise treat as a new query — expand and send
+                    message, ref_context = await expand_references_async(line)
+                    env_context = ""
+                    if config.context_injection:
+                        try:
+                            env_context = await gather_environment()
+                        except Exception:
+                            pass
+                    ctx_parts = [p for p in (env_context, ref_context) if p]
+                    full_context = "\n\n".join(ctx_parts) if ctx_parts else None
+                    parsed = await _stream_response(agent, message, context=full_context)
+                    if parsed.error:
+                        console.print(f"\n  [err]{parsed.error}[/]\n")
+                        continue
+                    interaction = await _agentic_step(agent, parsed, session, config, context=full_context, query=message)
+                    if interaction:
+                        asyncio.create_task(agent.learning_queue_add(interaction))
 
     finally:
         # Session save (best-effort)
@@ -635,6 +714,49 @@ async def _handle_recall(agent: Agent, key: str | None):
         console.print()
 
 
+async def _handle_suggest(agent: Agent):
+    """Show RAG gap analysis — missed queries and suggested topics."""
+    result = await agent.fact_suggestions()
+    if "error" in result:
+        console.print(f"  [err]{result['error']}[/]\n")
+        return
+
+    # Retrieval stats
+    hit_rate = result.get("hit_rate")
+    if hit_rate is not None:
+        console.print(f"  [accent]RAG hit rate:[/] {hit_rate:.0%}")
+
+    methods = result.get("retrieval_methods", {})
+    if methods:
+        for method, count in methods.items():
+            console.print(f"    {method}: {count}")
+
+    # Missed queries
+    missed = result.get("missed_queries", [])
+    if missed:
+        console.print("\n  [accent]top missed queries:[/]")
+        for q in missed:
+            if isinstance(q, dict):
+                console.print(f"    \u2022 {q.get('query', q)}")
+            else:
+                console.print(f"    \u2022 {q}")
+
+    # Suggested topics
+    suggestions = result.get("suggested_topics", result.get("suggestions", []))
+    if suggestions:
+        console.print("\n  [accent]suggested facts to add:[/]")
+        for s in suggestions:
+            if isinstance(s, dict):
+                console.print(f"    \u2022 [dim]{s.get('key', '')}[/] = {s.get('value', s)}")
+            else:
+                console.print(f"    \u2022 {s}")
+
+    if not missed and not suggestions and hit_rate is None:
+        console.print("  [dim]no RAG data yet — ask some queries first[/]")
+
+    console.print()
+
+
 def _help():
     console.print("""
   [accent]<query>[/]        ask talos anything (agentic mode)
@@ -642,6 +764,7 @@ def _help():
   [accent]remember[/]       store a fact (remember key = value)
   [accent]recall[/]         recall stored facts (recall [key])
   [accent]facts[/]          list all stored facts
+  [accent]suggest[/]        RAG gap analysis — missed queries & suggestions
   [accent]stats[/]          toggle system stats panel
   [accent]reset[/]          clear conversation history
   [accent]clear[/]          redraw banner
@@ -659,4 +782,9 @@ def _help():
   [dim]y/enter[/]        run the command
   [dim]n[/]              skip this command
   [dim]a[/]              auto-run all remaining commands
+
+  [dim]after execution:[/]
+  [dim]+[/]              rate response positive
+  [dim]-[/]              rate response negative
+  [dim]enter[/]          skip rating
 """)

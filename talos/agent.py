@@ -254,6 +254,28 @@ class Agent:
         except _CONNECT_ERRORS as exc:
             return {"error": str(exc)}
 
+    async def learning_queue_add(self, interaction: dict) -> dict:
+        """Log an interaction to Hive-Mind's learning queue."""
+        try:
+            resp = await self.http.post(
+                "/learning/queue/add", json={"interaction": interaction},
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except _CONNECT_ERRORS as exc:
+            return {"error": str(exc)}
+
+    async def fact_suggestions(self, limit: int = 10) -> dict:
+        """Get RAG gap analysis — missed queries and suggested facts."""
+        try:
+            resp = await self.http.post(
+                "/fact/suggestions", json={"limit": limit},
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except _CONNECT_ERRORS as exc:
+            return {"error": str(exc)}
+
     async def memory_recall(self, session_id: str | None = None) -> dict:
         """Recall session context from Hive-Mind."""
         try:
