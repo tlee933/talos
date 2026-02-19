@@ -1,6 +1,6 @@
 # Talos Roadmap
 
-Current: **v0.2.0** — streaming, error recovery, dangerous command detection
+Current: **v0.3.0** — Hive-Mind integration, context injection, session persistence
 
 ---
 
@@ -14,23 +14,26 @@ Current: **v0.2.0** — streaming, error recovery, dangerous command detection
 
 ---
 
-## Phase 2: Deeper Hive-Mind Integration (v0.3)
+## ~~Phase 2 Part 1: Core Hive-Mind Integration (v0.3)~~ ✓
 
-### Direct MCP tool access from TUI
-- Use Hive-Mind MCP tools from interactive mode (memory, facts, RAG)
-- `remember <fact>` command → stores in Hive-Mind RAG knowledge base
-- `recall` command → pull relevant context for current conversation
-- Session persistence across restarts via `memory_store/recall`
+- [x] `remember`/`recall`/`facts` commands — direct Hive-Mind fact store from TUI
+- [x] `@file.py` / `@clip` reference expansion — inject file/clipboard content into queries
+- [x] Environment context injection — cwd, git branch, diff stats in LLM system prompt
+- [x] Session persistence — `memory_store` on exit, `memory_recall` on startup
+- [x] `AtRefCompleter` — tab-complete `@` references against cwd files
+- [x] `context_injection` config toggle
+- [x] 55 unit tests (7 agent hivemind, 12 context, 3 completers, 2 config + existing)
 
-### Context awareness
-- Auto-inject current directory, git branch, recent commands into LLM context
-- File content injection: `@file.py` syntax to include file contents in query
-- Clipboard integration: paste context from KDE clipboard
+## Phase 2 Part 2: Learning & RAG (v0.3.x)
 
 ### Learning feedback loop
 - Rate responses (thumbs up/down) → feeds `learning_queue_add`
 - Bad responses get negative training signal
 - Track which queries lead to successful command execution
+
+### RAG-enhanced queries
+- Semantic search across stored facts before sending to LLM
+- Auto-retrieve relevant context from previous sessions
 
 ---
 
@@ -162,4 +165,4 @@ npx web-ext build                        # package for AMO
 
 ---
 
-*Last updated: 2026-02-18*
+*Last updated: 2026-02-19*
