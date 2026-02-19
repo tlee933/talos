@@ -30,6 +30,10 @@ guardian that runs on your own hardware.
   injects clipboard into your query
 - **Persistent memory** — `remember`/`recall`/`facts` commands store knowledge
   in Hive-Mind across sessions; context saved on exit, restored on startup
+- **Learning feedback** — interactions auto-logged to the learning pipeline;
+  inline `+`/`-` rating after command execution enriches training signal
+- **RAG gap analysis** — `suggest` command shows hit rate, missed queries,
+  and recommends facts to add for better retrieval
 - **Dangerous command detection** — destructive commands flagged with warnings
 - **Semantic RAG** — the model knows your system, your projects, your preferences
 - **Obsidian vault integration** — search, read, create notes from the terminal
@@ -64,6 +68,11 @@ Confirmation options during execution:
 - **n** — skip
 - **a** — auto-run all remaining steps
 
+After execution, rate the response:
+- **+** — positive feedback (feeds learning pipeline)
+- **-** — negative feedback
+- **enter** — skip rating
+
 ## Stack
 
 - **OS**: Fedora 43 Kinoite (rpm-ostree, Wayland)
@@ -94,6 +103,7 @@ talos vault daily            # open/create today's daily note
 | `remember k = v`   | Store a fact in Hive-Mind            |
 | `recall [key]`     | Recall a specific or all facts       |
 | `facts`            | List all stored facts                |
+| `suggest`          | RAG gap analysis & suggested facts   |
 | `!cmd`             | Run a shell command directly         |
 | `stats`            | Toggle the system stats panel        |
 | `reset`            | Clear conversation history           |
@@ -125,8 +135,8 @@ context_injection: true    # inject cwd, git branch into LLM context
 ```
 talos CLI/TUI
     |
-    +-- tui.py ------- agentic REPL, commands, context injection, session lifecycle
-    +-- agent.py ----- Hive-Mind HTTP API (chat, facts, memory, streaming)
+    +-- tui.py ------- agentic REPL, commands, learning feedback, session lifecycle
+    +-- agent.py ----- Hive-Mind HTTP API (chat, facts, memory, learning, streaming)
     +-- context.py --- env gathering (cwd, git), @file/@clip expansion
     +-- banner.py ---- startup banner with live system stats
     +-- shell.py ----- async subprocess execution
