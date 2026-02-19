@@ -11,7 +11,7 @@ guardian that runs on your own hardware.
 │  ╔╦╗╔═╗╦  ╔═╗╔═╗           │  │  model       HiveCoder-7B 61.3 tok/s online       │
 │   ║ ╠═╣║  ║ ║╚═╗           │  │  rag         ━━━━━━━━━━━━╌╌╌╌ 75% 73 queries      │
 │   ╩ ╩ ╩╩═╝╚═╝╚═╝           │  │  learning    ━━━━━━━━━━╌╌╌╌╌╌ 64% 32/50 samples   │
-│   v0.1.0 — the bronze      │  │              ~3.7d to next train · v0.9.1         │
+│   v0.3.0 — the bronze      │  │              ~3.7d to next train · v0.9.1         │
 │ guardian                   │  │  gpu         ━━━━━━━━╌╌╌╌ 67% vram 59°C · 100%    │
 ╰────────────────────────────╯  │  redis       cluster 4.26M · 99 sessions          │
                                 │  vault       found ~/Documents/Vault              │
@@ -24,6 +24,13 @@ guardian that runs on your own hardware.
 - **Agentic shell execution** — ask a question, Talos reasons through it,
   proposes commands step-by-step, executes with your confirmation, and
   summarizes results (Open Interpreter-style)
+- **Streaming output** — token-by-token SSE streaming with Rich Live display
+- **Context-aware** — cwd, git branch, and diff stats injected into every query
+- **File & clipboard references** — `@file.py` injects file contents, `@clip`
+  injects clipboard into your query
+- **Persistent memory** — `remember`/`recall`/`facts` commands store knowledge
+  in Hive-Mind across sessions; context saved on exit, restored on startup
+- **Dangerous command detection** — destructive commands flagged with warnings
 - **Semantic RAG** — the model knows your system, your projects, your preferences
 - **Obsidian vault integration** — search, read, create notes from the terminal
 - **KDE desktop tools** — notifications, clipboard, file search (Baloo)
@@ -80,22 +87,27 @@ talos vault daily            # open/create today's daily note
 
 ### Interactive commands
 
-| Command  | Description                          |
-|----------|--------------------------------------|
-| `!cmd`   | Run a shell command directly         |
-| `stats`  | Toggle the system stats panel        |
-| `reset`  | Clear conversation history           |
-| `clear`  | Redraw banner with fresh stats       |
-| `help`   | Show all commands and keybindings    |
+| Command            | Description                          |
+|--------------------|--------------------------------------|
+| `@file.py <query>` | Inject file contents into query     |
+| `@clip <query>`    | Inject clipboard into query          |
+| `remember k = v`   | Store a fact in Hive-Mind            |
+| `recall [key]`     | Recall a specific or all facts       |
+| `facts`            | List all stored facts                |
+| `!cmd`             | Run a shell command directly         |
+| `stats`            | Toggle the system stats panel        |
+| `reset`            | Clear conversation history           |
+| `clear`            | Redraw banner with fresh stats       |
+| `help`             | Show all commands and keybindings    |
 
 ### Keybindings
 
-| Key      | Action                               |
-|----------|--------------------------------------|
-| `F2`     | Toggle stats panel                   |
-| `↑/↓`   | History navigation                   |
-| `Ctrl-R` | Reverse history search               |
-| `Tab`    | Completion (commands, paths, execs)  |
+| Key      | Action                                    |
+|----------|-------------------------------------------|
+| `F2`     | Toggle stats panel                        |
+| `↑/↓`   | History navigation                        |
+| `Ctrl-R` | Reverse history search                   |
+| `Tab`    | Completion (commands, @files, paths, execs)|
 
 ## Configuration
 
@@ -104,7 +116,8 @@ talos vault daily            # open/create today's daily note
 ```yaml
 hivemind_url: http://localhost:8090
 obsidian_vault: ~/Documents/Vault
-confirm_commands: true
+confirm_commands: always   # always | smart | never
+context_injection: true    # inject cwd, git branch into LLM context
 ```
 
 ## Architecture
@@ -112,11 +125,13 @@ confirm_commands: true
 ```
 talos CLI/TUI
     |
-    +-- agent.py ---- Hive-Mind HTTP API (RAG + LLM + multi-turn)
-    +-- banner.py --- startup banner with live system stats
-    +-- shell.py ---- async subprocess execution
-    +-- kde.py ------ notify-send, wl-clipboard, baloosearch
-    +-- obsidian.py - vault filesystem access + obsidian:// URI
+    +-- tui.py ------- agentic REPL, commands, context injection, session lifecycle
+    +-- agent.py ----- Hive-Mind HTTP API (chat, facts, memory, streaming)
+    +-- context.py --- env gathering (cwd, git), @file/@clip expansion
+    +-- banner.py ---- startup banner with live system stats
+    +-- shell.py ----- async subprocess execution
+    +-- kde.py ------- notify-send, wl-clipboard, baloosearch
+    +-- obsidian.py -- vault filesystem access + obsidian:// URI
 ```
 
 Hive-Mind provides the brain (inference, memory, learning). Talos is the
