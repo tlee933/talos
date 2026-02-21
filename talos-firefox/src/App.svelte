@@ -1,15 +1,17 @@
 <script>
   import { onMount } from 'svelte';
-  import { connect, setCallbacks, sendChat, checkHealth, disconnect } from './api.js';
-  import StatusBadge from './components/StatusBadge.svelte';
+  import { connect, setCallbacks, sendChat, checkHealth, getConfig, updateConfig, disconnect } from './api.js';
+  import { DEFAULT_CONFIG } from './providers.js';
+  import Toolbar from './components/Toolbar.svelte';
   import MessageList from './components/MessageList.svelte';
   import InputBar from './components/InputBar.svelte';
 
   let messages = $state([]);
   let connected = $state(false);
-  let latency = $state(0);
   let streaming = $state(false);
   let activeRequestId = $state(null);
+  let config = $state({ ...DEFAULT_CONFIG });
+  let tokPerSec = $state(null);
   let healthInterval;
 
   function handleSend(text) {
@@ -29,6 +31,13 @@
     streaming = true;
   }
 
+  function handleConfigChange(newConfig) {
+    config = { ...config, ...newConfig };
+    updateConfig(config);
+    // Re-check health with new URL
+    checkHealth();
+  }
+
   onMount(() => {
     setCallbacks({
       onStreamStart(reqId) {
@@ -41,10 +50,11 @@
           last.content += token;
         }
       },
-      onStreamEnd(reqId) {
+      onStreamEnd(reqId, tps) {
         if (reqId !== activeRequestId) return;
         streaming = false;
         activeRequestId = null;
+        if (tps != null) tokPerSec = tps;
       },
       onStreamError(reqId, error) {
         if (reqId !== activeRequestId) return;
@@ -59,11 +69,14 @@
       },
       onHealth(ok, ms) {
         connected = ok;
-        latency = ms;
+      },
+      onConfigLoaded(cfg) {
+        config = { ...DEFAULT_CONFIG, ...cfg };
       },
     });
 
     connect();
+    getConfig();
     checkHealth();
     healthInterval = setInterval(checkHealth, 30000);
 
@@ -74,6 +87,6 @@
   });
 </script>
 
-<StatusBadge {connected} {latency} />
+<Toolbar {connected} {config} {tokPerSec} onConfigChange={handleConfigChange} />
 <MessageList {messages} streamingId={activeRequestId} />
 <InputBar onSend={handleSend} disabled={streaming} />
