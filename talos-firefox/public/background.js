@@ -1,5 +1,10 @@
 const HIVE_MIND = 'http://localhost:8090';
 
+// Toolbar button toggles the sidebar
+browser.browserAction.onClicked.addListener(() => {
+  browser.sidebarAction.toggle();
+});
+
 browser.runtime.onConnect.addListener((port) => {
   if (port.name !== 'talos-sidebar') return;
 
