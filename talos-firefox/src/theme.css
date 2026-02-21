@@ -1,0 +1,48 @@
+:root {
+  --bronze: #CD7F32;
+  --amber: #FFBF00;
+  --verdigris: #43B3AE;
+  --oxidized: #C1440E;
+  --forge: #1A1A2E;
+  --forge-light: #242440;
+  --warm: #E8E0D4;
+  --muted: #8B7355;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  background: var(--forge);
+  color: var(--warm);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+#app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--forge);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--muted);
+  border-radius: 3px;
+}
+
+::selection {
+  background: rgba(205, 127, 50, 0.3);
+}

@@ -1,0 +1,61 @@
+<script>
+  import Message from './Message.svelte';
+
+  let { messages = [], streamingId = null } = $props();
+  let container;
+
+  $effect(() => {
+    // re-run whenever messages array changes (length or content)
+    messages.length;
+    if (container) {
+      container.scrollTop = container.scrollHeight;
+    }
+  });
+</script>
+
+<div class="message-list" bind:this={container}>
+  {#if messages.length === 0}
+    <div class="empty">
+      <div class="logo">T</div>
+      <p>Ask Talos anything</p>
+    </div>
+  {:else}
+    {#each messages as msg, i (i)}
+      <Message
+        role={msg.role}
+        content={msg.content}
+        streaming={msg.role === 'assistant' && streamingId !== null && i === messages.length - 1}
+      />
+    {/each}
+  {/if}
+</div>
+
+<style>
+  .message-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+  }
+
+  .empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 12px;
+    color: var(--muted);
+  }
+
+  .logo {
+    font-family: serif;
+    font-size: 48px;
+    font-weight: bold;
+    color: var(--bronze);
+    opacity: 0.4;
+  }
+
+  .empty p {
+    font-size: 13px;
+  }
+</style>

@@ -1,0 +1,29 @@
+{
+  "manifest_version": 2,
+  "name": "Talos",
+  "version": "0.4.0",
+  "description": "Local-first AI assistant — Hive-Mind in your sidebar",
+  "permissions": ["*://localhost/*"],
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": false
+  },
+  "sidebar_action": {
+    "default_title": "Talos",
+    "default_panel": "sidebar.html",
+    "default_icon": "icons/talos.svg"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "commands": {
+    "_execute_sidebar_action": {
+      "suggested_key": { "default": "Ctrl+Shift+Y" },
+      "description": "Toggle Talos sidebar"
+    }
+  }
+}
