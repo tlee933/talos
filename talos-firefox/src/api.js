@@ -35,14 +35,19 @@ export function connect() {
   });
 
   port.onDisconnect.addListener(() => {
-    callbacks.onHealth?.(false, 0);
     port = null;
+    // Auto-reconnect after a short delay
+    setTimeout(() => {
+      connect();
+      checkHealth();
+    }, 500);
   });
 
   return port;
 }
 
 export function sendChat(history) {
+  if (!port) connect();
   if (!port) return null;
   const requestId = crypto.randomUUID();
   port.postMessage({ type: 'CHAT', requestId, history });

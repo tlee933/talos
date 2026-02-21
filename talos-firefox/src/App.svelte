@@ -15,11 +15,14 @@
   function handleSend(text) {
     messages.push({ role: 'user', content: text });
 
-    const history = messages.map((m) => ({ role: m.role, content: m.content }));
+    // Snapshot history including the new user message (exclude empty assistant placeholder)
+    const history = messages
+      .filter((m) => m.content)
+      .map((m) => ({ role: m.role, content: m.content }));
 
     messages.push({ role: 'assistant', content: '' });
 
-    const reqId = sendChat(history.slice(0, -1));
+    const reqId = sendChat(history);
     if (!reqId) return;
 
     activeRequestId = reqId;
