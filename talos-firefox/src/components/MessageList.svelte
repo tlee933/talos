@@ -1,14 +1,23 @@
 <script>
+  import { tick } from 'svelte';
   import Message from './Message.svelte';
 
   let { messages = [], streamingId = null } = $props();
   let container;
 
+  // Track the last assistant message content for streaming scroll
+  let lastContent = $derived(
+    messages.length > 0 ? messages[messages.length - 1].content : ''
+  );
+
   $effect(() => {
-    // re-run whenever messages array changes (length or content)
+    // Trigger on length change or content change (streaming tokens)
     messages.length;
+    lastContent;
     if (container) {
-      container.scrollTop = container.scrollHeight;
+      tick().then(() => {
+        container.scrollTop = container.scrollHeight;
+      });
     }
   });
 </script>

@@ -14,8 +14,42 @@
   let tokPerSec = $state(null);
   let healthInterval;
 
+  // Page context state
+  let pageContext = $state(null);
+  let contextMode = $state(null);
+
+  function clearContext() {
+    pageContext = null;
+    contextMode = null;
+  }
+
   function handleSend(text) {
-    messages.push({ role: 'user', content: text });
+    let userContent = text;
+
+    // Inject page context into the message
+    if (pageContext) {
+      const title = pageContext.title || 'Untitled';
+      const url = pageContext.url || '';
+
+      let contextBlock = `[Context: ${title}](${url})\n`;
+
+      if (contextMode === 'selection' && pageContext.selection) {
+        contextBlock += `> ${pageContext.selection}\n\n`;
+      } else if (pageContext.text) {
+        contextBlock += `> ${pageContext.text.slice(0, 2000)}\n\n`;
+      }
+
+      // For "summarize" with no user text, auto-fill
+      if (contextMode === 'summarize' && text === 'Summarize this page.') {
+        userContent = contextBlock + text;
+      } else {
+        userContent = contextBlock + text;
+      }
+
+      clearContext();
+    }
+
+    messages.push({ role: 'user', content: userContent });
 
     // Snapshot history including the new user message (exclude empty assistant placeholder)
     const history = messages
@@ -73,6 +107,14 @@
       onConfigLoaded(cfg) {
         config = { ...DEFAULT_CONFIG, ...cfg };
       },
+      onContextReceived(context, mode) {
+        pageContext = context;
+        contextMode = mode;
+
+        // For "summarize" mode, auto-fill the input hint
+        // (the actual auto-send is handled via the InputBar text prop if desired,
+        //  but we keep it simple — user sees the chip and can type or just hit enter)
+      },
     });
 
     connect();
@@ -89,4 +131,11 @@
 
 <Toolbar {connected} {config} {tokPerSec} onConfigChange={handleConfigChange} />
 <MessageList {messages} streamingId={activeRequestId} />
-<InputBar onSend={handleSend} disabled={streaming} />
+<InputBar
+  onSend={handleSend}
+  disabled={streaming}
+  context={pageContext}
+  contextMode={contextMode}
+  onDismissContext={clearContext}
+  {messages}
+/>

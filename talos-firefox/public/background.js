@@ -17,6 +17,7 @@ const DEFAULT_CONFIG = {
 };
 
 let config = { ...DEFAULT_CONFIG };
+let sidebarPort = null;
 
 async function loadConfig() {
   try {
@@ -61,6 +62,54 @@ function chatEndpoint() {
   return `${base}/v1/chat/completions`;
 }
 
+// --- Context Menus ---
+browser.contextMenus.create({
+  id: 'talos-send-selection',
+  title: 'Send Selection to Talos',
+  contexts: ['selection'],
+});
+
+browser.contextMenus.create({
+  id: 'talos-send-page',
+  title: 'Send Page to Talos',
+  contexts: ['page'],
+});
+
+browser.contextMenus.create({
+  id: 'talos-summarize',
+  title: 'Summarize Page',
+  contexts: ['page'],
+});
+
+browser.contextMenus.onClicked.addListener(async (info, tab) => {
+  const modeMap = {
+    'talos-send-selection': 'selection',
+    'talos-send-page': 'page',
+    'talos-summarize': 'summarize',
+  };
+  const mode = modeMap[info.menuItemId];
+  if (!mode) return;
+
+  try {
+    // Open sidebar so context has somewhere to go
+    browser.sidebarAction.open();
+
+    // Ask content script to extract page data
+    const context = await browser.tabs.sendMessage(tab.id, {
+      type: 'EXTRACT_CONTEXT',
+      mode,
+    });
+
+    // Relay to sidebar
+    if (sidebarPort) {
+      sidebarPort.postMessage({ type: 'PAGE_CONTEXT', context, mode });
+    }
+  } catch (err) {
+    // Content script might not be injected yet — ignore
+    console.warn('Talos context extraction failed:', err.message);
+  }
+});
+
 // Toolbar button toggles the sidebar
 browser.browserAction.onClicked.addListener(() => {
   browser.sidebarAction.toggle();
@@ -72,11 +121,17 @@ loadConfig();
 browser.runtime.onConnect.addListener((port) => {
   if (port.name !== 'talos-sidebar') return;
 
+  sidebarPort = port;
+
   port.onMessage.addListener((msg) => {
     if (msg.type === 'CHAT') handleChat(port, msg);
     else if (msg.type === 'HEALTH_CHECK') handleHealth(port);
     else if (msg.type === 'CONFIG_GET') handleConfigGet(port);
     else if (msg.type === 'CONFIG_UPDATE') handleConfigUpdate(port, msg);
+  });
+
+  port.onDisconnect.addListener(() => {
+    if (sidebarPort === port) sidebarPort = null;
   });
 });
 

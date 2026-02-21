@@ -1,7 +1,35 @@
 <script>
+  import snarkdown from 'snarkdown';
   import CodeBlock from './CodeBlock.svelte';
 
   let { role = 'user', content = '', streaming = false } = $props();
+
+  const ALLOWED_TAGS = new Set([
+    'strong', 'em', 'a', 'code', 'ul', 'ol', 'li', 'p', 'br',
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'hr', 'del',
+  ]);
+
+  function sanitize(html) {
+    // Strip tags not in allowlist, keep only href on <a>
+    return html.replace(/<\/?([a-zA-Z][a-zA-Z0-9]*)\b[^>]*>/g, (full, tag) => {
+      const lower = tag.toLowerCase();
+      const isClosing = full.startsWith('</');
+
+      if (!ALLOWED_TAGS.has(lower)) return '';
+
+      if (isClosing) return `</${lower}>`;
+
+      if (lower === 'a') {
+        const hrefMatch = full.match(/href\s*=\s*"([^"]*)"/i) || full.match(/href\s*=\s*'([^']*)'/i);
+        if (hrefMatch) {
+          return `<a href="${hrefMatch[1]}" target="_blank" rel="noopener">`;
+        }
+        return '<a>';
+      }
+
+      return `<${lower}>`;
+    });
+  }
 
   function parseContent(text) {
     const parts = [];
@@ -36,6 +64,8 @@
     {#each parts as part}
       {#if part.type === 'code'}
         <CodeBlock code={part.value} language={part.language} />
+      {:else if role === 'assistant'}
+        <span class="markdown">{@html sanitize(snarkdown(part.value))}</span>
       {:else}
         <span class="text">{part.value}</span>
       {/if}
@@ -65,13 +95,13 @@
     padding: 8px 12px;
     border-radius: 8px;
     word-wrap: break-word;
-    white-space: pre-wrap;
   }
 
   .user .bubble {
     background: rgba(205, 127, 50, 0.15);
     border: 1px solid rgba(205, 127, 50, 0.3);
     color: var(--warm);
+    white-space: pre-wrap;
   }
 
   .assistant .bubble {
@@ -83,6 +113,93 @@
   .text {
     font-size: 13px;
     line-height: 1.5;
+    white-space: pre-wrap;
+  }
+
+  .markdown {
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  /* Markdown styles for assistant messages */
+  .assistant .bubble :global(strong) {
+    color: var(--bronze);
+  }
+
+  .assistant .bubble :global(em) {
+    font-style: italic;
+  }
+
+  .assistant .bubble :global(a) {
+    color: var(--verdigris);
+    text-decoration: underline;
+  }
+
+  .assistant .bubble :global(a:hover) {
+    color: var(--amber);
+  }
+
+  .assistant .bubble :global(ul),
+  .assistant .bubble :global(ol) {
+    padding-left: 20px;
+    margin: 4px 0;
+  }
+
+  .assistant .bubble :global(li) {
+    margin: 2px 0;
+  }
+
+  .assistant .bubble :global(blockquote) {
+    border-left: 3px solid var(--bronze);
+    padding: 4px 10px;
+    margin: 6px 0;
+    background: rgba(205, 127, 50, 0.08);
+    color: var(--muted);
+  }
+
+  .assistant .bubble :global(h1),
+  .assistant .bubble :global(h2),
+  .assistant .bubble :global(h3),
+  .assistant .bubble :global(h4),
+  .assistant .bubble :global(h5),
+  .assistant .bubble :global(h6) {
+    color: var(--bronze);
+    margin: 8px 0 4px;
+    line-height: 1.3;
+  }
+
+  .assistant .bubble :global(h1) { font-size: 16px; }
+  .assistant .bubble :global(h2) { font-size: 15px; }
+  .assistant .bubble :global(h3) { font-size: 14px; }
+  .assistant .bubble :global(h4),
+  .assistant .bubble :global(h5),
+  .assistant .bubble :global(h6) { font-size: 13px; }
+
+  .assistant .bubble :global(code) {
+    background: var(--forge-light);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 12px;
+  }
+
+  .assistant .bubble :global(hr) {
+    border: none;
+    border-top: 1px solid var(--muted);
+    margin: 8px 0;
+  }
+
+  .assistant .bubble :global(p) {
+    margin-bottom: 6px;
+  }
+
+  .assistant .bubble :global(p:last-child) {
+    margin-bottom: 0;
+  }
+
+  .assistant .bubble :global(del) {
+    text-decoration: line-through;
+    opacity: 0.7;
   }
 
   .cursor {

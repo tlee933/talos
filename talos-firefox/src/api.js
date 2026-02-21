@@ -6,6 +6,7 @@ let callbacks = {
   onStreamError: null,
   onHealth: null,
   onConfigLoaded: null,
+  onContextReceived: null,
 };
 
 export function setCallbacks(cbs) {
@@ -34,6 +35,9 @@ export function connect() {
         break;
       case 'CONFIG_LOADED':
         callbacks.onConfigLoaded?.(msg.config);
+        break;
+      case 'PAGE_CONTEXT':
+        callbacks.onContextReceived?.(msg.context, msg.mode);
         break;
     }
   });

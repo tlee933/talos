@@ -6,3 +6,4 @@ build/
 .venv/
 *.gguf
 .ruff_cache/
+.env

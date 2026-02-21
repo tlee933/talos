@@ -1,14 +1,14 @@
 {
   "manifest_version": 2,
   "name": "Talos",
-  "version": "0.4.5",
+  "version": "0.5.0",
   "description": "Local-first AI assistant — Hive-Mind in your sidebar",
   "browser_specific_settings": {
     "gecko": {
       "id": "{05c50ef5-c6f5-4331-8d9b-7ed46334f728}"
     }
   },
-  "permissions": ["storage", "*://*/*"],
+  "permissions": ["storage", "contextMenus", "*://*/*"],
   "background": {
     "scripts": ["background.js"],
     "persistent": true
