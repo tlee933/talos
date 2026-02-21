@@ -3,6 +3,11 @@
   "name": "Talos",
   "version": "0.4.0",
   "description": "Local-first AI assistant — Hive-Mind in your sidebar",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "{05c50ef5-c6f5-4331-8d9b-7ed46334f728}"
+    }
+  },
   "permissions": ["*://localhost/*"],
   "background": {
     "scripts": ["background.js"],
