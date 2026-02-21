@@ -11,7 +11,7 @@ guardian that runs on your own hardware.
 │  ╔╦╗╔═╗╦  ╔═╗╔═╗           │  │  model       HiveCoder-7B 61.3 tok/s online       │
 │   ║ ╠═╣║  ║ ║╚═╗           │  │  rag         ━━━━━━━━━━━━╌╌╌╌ 75% 73 queries      │
 │   ╩ ╩ ╩╩═╝╚═╝╚═╝           │  │  learning    ━━━━━━━━━━╌╌╌╌╌╌ 64% 32/50 samples   │
-│   v0.3.1 — the bronze      │  │              ~3.7d to next train · v0.9.1         │
+│   v0.4.0 — the bronze       │  │              ~3.7d to next train · v0.9.1         │
 │ guardian                   │  │  gpu         ━━━━━━━━╌╌╌╌ 67% vram 59°C · 100%    │
 ╰────────────────────────────╯  │  redis       cluster 4.26M · 99 sessions          │
                                 │  vault       found ~/Documents/Vault              │
@@ -39,6 +39,8 @@ guardian that runs on your own hardware.
 - **Obsidian vault integration** — search, read, create notes from the terminal
 - **KDE desktop tools** — notifications, clipboard, file search (Baloo)
 - **Self-improving** — every interaction feeds the continuous learning pipeline
+- **Firefox sidebar** — same chat interface in the browser via Ctrl+Shift+Y,
+  streaming responses through a background script proxy to Hive-Mind
 
 ## Interactive mode
 
@@ -80,6 +82,7 @@ After execution, rate the response:
 - **LLM**: HiveCoder-7B (local, LoRA fine-tuned, GGUF via llama.cpp)
 - **Memory**: Hive-Mind (Redis cluster, semantic RAG, learning pipeline)
 - **TUI**: Rich + prompt_toolkit (Python)
+- **Browser**: Firefox sidebar extension (Svelte 5, Vite, MV2)
 - **IPC**: D-Bus for KDE integration
 
 ## Usage
@@ -142,6 +145,15 @@ talos CLI/TUI
     +-- shell.py ----- async subprocess execution
     +-- kde.py ------- notify-send, wl-clipboard, baloosearch
     +-- obsidian.py -- vault filesystem access + obsidian:// URI
+```
+
+```
+talos-firefox/
+    |
+    +-- background.js -- SSE proxy to Hive-Mind, port message relay
+    +-- sidebar.html --- Svelte 5 chat UI (bronze theme)
+    +-- api.js --------- runtime.connect() port + message helpers
+    +-- content.js ----- page context extraction (stub)
 ```
 
 Hive-Mind provides the brain (inference, memory, learning). Talos is the

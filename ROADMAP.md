@@ -1,6 +1,6 @@
 # Talos Roadmap
 
-Current: [**v0.3.1**](https://github.com/tlee933/talos/releases/tag/v0.3.1) — learning feedback, RAG suggestions, context injection, session persistence
+Current: **v0.4.0** — Firefox sidebar extension MVP
 
 ---
 
@@ -34,92 +34,25 @@ Current: [**v0.3.1**](https://github.com/tlee933/talos/releases/tag/v0.3.1) — 
 
 ---
 
-## Phase 3: Firefox Extension — Talos Sidebar (v0.4)
+## ~~Phase 3 Part 1: Firefox Sidebar MVP (v0.4.0)~~ ✓
 
-### Architecture
+- [x] Svelte 5 sidebar panel with bronze/forge theme
+- [x] Background script SSE proxy to Hive-Mind at localhost:8090
+- [x] Streaming chat via `runtime.connect()` long-lived ports
+- [x] Message protocol: `CHAT`, `HEALTH_CHECK`, `STREAM_TOKEN`, `STREAM_END`, `STREAM_ERROR`
+- [x] Code block parsing with copy button
+- [x] Health check on connect + every 30s with status badge
+- [x] Ctrl+Shift+Y keyboard toggle
+- [x] MV2 manifest, `web-ext` dev workflow, Vite build (76KB dist)
 
-```
-┌─ Firefox ──────────────────────────────────────────────┐
-│                                                         │
-│  ┌─ Sidebar Panel ──────┐  ┌─ Content Script ────────┐ │
-│  │  Chat UI (Svelte)    │  │  Page text extraction   │ │
-│  │  Streaming responses │  │  Selection capture      │ │
-│  │  Command output      │  │  DOM reading            │ │
-│  └──────────┬───────────┘  └──────────┬──────────────┘ │
-│             │   runtime.connect()      │                │
-│  ┌──────────▼──────────────────────────▼──────────────┐ │
-│  │  Background Script (event page)                    │ │
-│  │  - Routes messages between sidebar & content       │ │
-│  │  - Handles localhost fetch to Hive-Mind API        │ │
-│  │  - Manages streaming via long-lived ports          │ │
-│  └──────────┬─────────────────────────────────────────┘ │
-└─────────────┼───────────────────────────────────────────┘
-              │ fetch() http://localhost:8090
-┌─────────────▼─────────────────────────────────────────┐
-│  Hive-Mind @ :8090                                     │
-│  RAG + LLM + Memory + Learning Pipeline               │
-└───────────────────────────────────────────────────────┘
-```
+## Phase 3 Part 2: Page Context & Polish (v0.4.x)
 
-### Technical decisions
-- **Manifest V2** — Firefox supports it long-term, simpler than MV3
-- **Sidebar via `sidebar_action`** — native Firefox sidebar panel
-- **Svelte** for the UI — tiny bundles, no runtime overhead
-- **Background script** handles all localhost fetch (avoids CORS)
-- **`runtime.connect()`** long-lived ports for streaming responses
-- **`_execute_sidebar_action`** command for keyboard toggle
-- **`web-ext`** for dev (live-reload) and packaging
-
-### Manifest skeleton
-
-```json
-{
-  "manifest_version": 2,
-  "name": "Talos",
-  "version": "0.4.0",
-  "description": "Local AI assistant sidebar — powered by Hive-Mind",
-  "permissions": ["*://localhost/*", "activeTab", "storage"],
-  "background": {
-    "scripts": ["background.js"],
-    "persistent": false
-  },
-  "sidebar_action": {
-    "default_title": "Talos",
-    "default_panel": "sidebar/index.html",
-    "default_icon": "icons/talos.svg"
-  },
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "run_at": "document_idle"
-    }
-  ],
-  "commands": {
-    "_execute_sidebar_action": {
-      "suggested_key": { "default": "Ctrl+Shift+Y" },
-      "description": "Toggle Talos sidebar"
-    }
-  }
-}
-```
-
-### Features
-- **Chat sidebar** — same agentic flow as TUI, in the browser
-- **Page context** — select text on any page, send to Talos as context
-- **Ctrl+Shift+Y** — toggle sidebar from anywhere
-- **Streaming** — token-by-token output via long-lived ports
-- **Bronze theme** — matching the TUI aesthetic
-- **Hive-Mind memory** — conversations persist via Redis sessions
-- **No cloud** — all traffic stays on localhost
-
-### Dev setup
-```bash
-cd talos-firefox/
-npm install
-npx web-ext run --firefox-profile dev    # live-reload dev
-npx web-ext build                        # package for AMO
-```
+- [ ] Content script: page text extraction, selection capture
+- [ ] `@page` / `@selection` context injection into chat
+- [ ] Conversation persistence via `browser.storage.local`
+- [ ] System stats panel (model, RAG, latency)
+- [ ] Fact management from sidebar (`remember`/`recall`)
+- [ ] Settings panel (Hive-Mind URL, model, temperature)
 
 ---
 
@@ -162,4 +95,4 @@ npx web-ext build                        # package for AMO
 
 ---
 
-*Last updated: 2026-02-19*
+*Last updated: 2026-02-20*
