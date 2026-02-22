@@ -163,6 +163,38 @@ with Dark Reader layered on top.
 
 140 Python tests, 69 JS tests. Extension v0.7.2 signed and installed in Zen.
 
+## v0.7.3 — The self-improving loop
+
+Talos now has two brains. An intelligent model router classifies every query
+and sends it to the right one — HiveCoder-7B (88 tok/s, code-tuned) for
+code, shell, and tool-use queries, or DeepSeek-R1-Distill-Qwen-14B (55 tok/s,
+chain-of-thought reasoning) for analysis, explanation, and "why" questions.
+
+The router is a pure-function classifier with zero latency. It scores queries
+against ~30 code signal keywords and ~25 reasoning signal keywords, with bonus
+weight for code blocks, import patterns, and file paths. Priority order:
+explicit model hint > `/reason` command > heuristic scoring > default to
+HiveCoder. Ties go to the fast model.
+
+The key insight: **R1's answers teach HiveCoder.** Every R1 response is
+auto-rated positive and tagged with `model_source: "r1-distill"`. These
+bypass the quality filter in the continuous learning pipeline and flow straight
+into HiveCoder's LoRA training data. Pure-reasoning answers (no commands
+executed) get captured too via a dedicated `build_reasoning_interaction()`
+path — previously these were silently dropped. The bigger model teaches the
+smaller model through the existing training loop, and HiveCoder gets smarter
+over time while staying at 88 tok/s.
+
+The HTTP server resolves model-specific endpoints, system prompts, and
+`max_tokens` from a new `inference.models` config dict. Streaming responses
+include `X-Model-Used`, `X-Model-Id`, and `X-Routing-Reason` headers. The TUI
+captures these and shows "routed → R1-Distill-14B" when the reasoning model
+handles a query. The Firefox toolbar dynamically updates to show the actual
+model that answered.
+
+147 Python tests, 14 router tests, 69 JS tests. Extension v0.7.3 signed and
+installed in Zen.
+
 ---
 
 ## Lessons along the way
@@ -199,4 +231,4 @@ with Dark Reader layered on top.
 
 The guardian keeps learning. Every conversation, every correction, every rated
 response feeds back into the LoRA training pipeline. The model gets sharper.
-The RAG gets denser. The bronze grows a patina — and now, it gleams with gold.
+The RAG gets denser. The bronze grows a patina — and now, it teaches itself.
