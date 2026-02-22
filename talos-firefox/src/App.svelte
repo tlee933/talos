@@ -41,13 +41,50 @@
   }
 
   function pruneHistory() {
-    // Keep first + last 6 messages, drop middle when over 90K chars
-    const totalChars = messages.reduce((sum, m) => sum + (m.content || '').length, 0);
-    if (totalChars < 90000 || messages.length <= 7) return;
+    // Target: ~20K tokens worth of chars (~70K chars at 3.5 chars/token)
+    // Leaves headroom for system prompt + RAG facts injected server-side
+    const MAX_HISTORY_CHARS = 70000;
+    const MAX_MSG_CHARS = 3000;
+    const MIN_RECENT = 6;
+
+    // Step 1: Strip think blocks from older messages (keep in most recent)
+    for (let i = 0; i < messages.length - 2; i++) {
+      const m = messages[i];
+      if (m.role === 'assistant' && m.content?.includes('<think>')) {
+        m.content = m.content.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
+      }
+    }
+
+    // Step 2: Truncate bloated individual messages (except last 2)
+    for (let i = 0; i < messages.length - 2; i++) {
+      if ((messages[i].content || '').length > MAX_MSG_CHARS) {
+        messages[i] = {
+          ...messages[i],
+          content: messages[i].content.slice(0, MAX_MSG_CHARS) + '\n...(truncated)',
+        };
+      }
+    }
+
+    // Step 3: Drop middle messages oldest-first if still over budget
+    const totalChars = () => messages.reduce((sum, m) => sum + (m.content || '').length, 0);
+    if (totalChars() < MAX_HISTORY_CHARS || messages.length <= MIN_RECENT + 1) return;
 
     const first = messages.slice(0, 1);
-    const recent = messages.slice(-6);
-    messages = [...first, { role: 'system', content: '[earlier messages pruned]' }, ...recent];
+    const recent = messages.slice(-MIN_RECENT);
+    let middle = messages.slice(1, -MIN_RECENT);
+
+    while (middle.length > 0 && (
+      first.reduce((s, m) => s + (m.content || '').length, 0) +
+      middle.reduce((s, m) => s + (m.content || '').length, 0) +
+      recent.reduce((s, m) => s + (m.content || '').length, 0)
+    ) > MAX_HISTORY_CHARS) {
+      middle.shift();
+    }
+
+    messages = [...first, ...middle, ...recent];
+    if (middle.length === 0) {
+      messages = [...first, { role: 'system', content: '[earlier messages pruned]' }, ...recent];
+    }
   }
 
   function debouncedSave() {
@@ -266,7 +303,7 @@
             const preview = (data.text || '').slice(0, 800);
             last.content = `**${title}**\n\n${preview}${data.text && data.text.length > 800 ? '\n\n*(truncated)*' : ''}`;
             // Inject full text into history for follow-up questions
-            messages.push({ role: 'system', content: `[Web page content from ${data.url}]: ${(data.text || '').slice(0, 4000)}` });
+            messages.push({ role: 'system', content: `[Web page content from ${data.url}]: ${(data.text || '').slice(0, 2000)}` });
           }
         }
       },
