@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import ContextChip from './ContextChip.svelte';
+  import { matchSuggestion } from '../utils.js';
 
   let { onSend, disabled = false, context = null, contextMode = null, onDismissContext, messages = [] } = $props();
   let text = $state('');
@@ -59,12 +60,9 @@
   let ghost = $derived.by(() => {
     // Empty field after a conversation — show preemptive suggestion
     if (!text && preempt) return preempt;
-    if (!text || text.length < 2) return '';
-    const lower = text.toLowerCase();
     // Context-aware suggestions take priority
     const all = [...contextSuggestions, ...BASE_SUGGESTIONS];
-    const match = all.find((s) => s.toLowerCase().startsWith(lower));
-    return match ? match.slice(text.length) : '';
+    return matchSuggestion(text, all);
   });
 
   function handleKeydown(e) {

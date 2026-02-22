@@ -19,7 +19,7 @@ from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.text import Text
 
-from talos.agent import Agent, ParsedResponse, parse_response
+from talos.agent import Agent, ParsedResponse, Turn, parse_response
 from talos.config import Config
 from talos.context import gather_environment, expand_references_async
 from talos.theme import THEME, COLORS
@@ -74,6 +74,9 @@ class TalosCommandCompleter(Completer):
         "recall": "Recall stored facts",
         "facts": "List all stored facts",
         "suggest": "RAG gap analysis — missed queries & suggestions",
+        "bridge": "View shared conversation history",
+        "web": "Fetch URL and inject as context",
+        "search": "Search DuckDuckGo for results",
     }
 
     def get_completions(self, document, complete_event):
@@ -561,6 +564,15 @@ async def run(config: Config):
             if line == "suggest":
                 await _handle_suggest(agent)
                 continue
+            if line.startswith("bridge"):
+                await _handle_bridge(agent, line[6:])
+                continue
+            if line.startswith("web "):
+                await _handle_web(agent, line[4:].strip())
+                continue
+            if line.startswith("search "):
+                await _handle_search(agent, line[7:].strip())
+                continue
 
             # ! prefix = direct shell (bypass LLM)
             if line.startswith("!"):
@@ -604,6 +616,10 @@ async def run(config: Config):
 
             disconnected = False
             interaction = await _agentic_step(agent, parsed, session, config, context=full_context, query=message)
+
+            # Log to conversation bridge (fire-and-forget)
+            asyncio.create_task(agent.conversation_log("user", message, "tui"))
+            asyncio.create_task(agent.conversation_log("assistant", parsed.raw[:2000], "tui"))
 
             # Log interaction + offer rating if commands were executed
             if interaction:
@@ -757,6 +773,90 @@ async def _handle_suggest(agent: Agent):
     console.print()
 
 
+async def _handle_bridge(agent: Agent, arg: str):
+    """Show shared conversation history from the bridge."""
+    limit = 20
+    if arg.strip().isdigit():
+        limit = int(arg.strip())
+    result = await agent.conversation_recent(limit=limit)
+    if "error" in result:
+        console.print(f"  [err]{result['error']}[/]\n")
+        return
+
+    messages = result.get("messages", [])
+    if not messages:
+        console.print("  [dim]no shared messages yet[/]\n")
+        return
+
+    for msg in messages:
+        source = msg.get("source", "?")
+        role = msg.get("role", "?")
+        content = msg.get("content", "")
+        # Truncate long messages
+        if len(content) > 200:
+            content = content[:200] + "..."
+        badge = f"[accent][{source}][/]"
+        role_style = "ok" if role == "assistant" else "dim"
+        console.print(f"  {badge} [{role_style}]{role}:[/] {content}")
+    console.print()
+
+
+async def _handle_web(agent: Agent, url: str):
+    """Fetch a URL and inject its content as context."""
+    if not url:
+        console.print("  [err]usage: web <url>[/]\n")
+        return
+
+    with console.status("  [dim]fetching...[/]", spinner="dots"):
+        result = await agent.web_fetch(url)
+
+    if "error" in result:
+        console.print(f"  [err]{result['error']}[/]\n")
+        return
+
+    title = result.get("title", "(no title)")
+    text = result.get("text", "")
+    console.print(f"  [accent]{title}[/]")
+    # Show preview (first 500 chars)
+    preview = text[:500] + ("..." if len(text) > 500 else "")
+    console.print(f"  [dim]{preview}[/]")
+    console.print(f"  [dim]{len(text)} chars fetched — injecting as context[/]\n")
+
+    # Inject full text into agent history as context
+    agent.history.append(
+        Turn(role="user", content=f"[Web page: {title}]\n{text}")
+    )
+
+
+async def _handle_search(agent: Agent, query: str):
+    """Search DuckDuckGo and display results."""
+    if not query:
+        console.print("  [err]usage: search <query>[/]\n")
+        return
+
+    with console.status("  [dim]searching...[/]", spinner="dots"):
+        result = await agent.web_search(query)
+
+    if "error" in result:
+        console.print(f"  [err]{result['error']}[/]\n")
+        return
+
+    results = result.get("results", [])
+    if not results:
+        console.print("  [dim]no results found[/]\n")
+        return
+
+    for i, r in enumerate(results, 1):
+        title = r.get("title", "(no title)")
+        url = r.get("url", "")
+        snippet = r.get("snippet", "")
+        console.print(f"  [accent]{i}.[/] {title}")
+        console.print(f"     [dim]{url}[/]")
+        if snippet:
+            console.print(f"     {snippet}")
+    console.print()
+
+
 def _help():
     console.print("""
   [accent]<query>[/]        ask talos anything (agentic mode)
@@ -765,6 +865,9 @@ def _help():
   [accent]recall[/]         recall stored facts (recall [key])
   [accent]facts[/]          list all stored facts
   [accent]suggest[/]        RAG gap analysis — missed queries & suggestions
+  [accent]bridge[/] [dim][N][/]     view shared conversation history
+  [accent]web[/] [dim]<url>[/]      fetch URL and inject as context
+  [accent]search[/] [dim]<query>[/] search DuckDuckGo for results
   [accent]stats[/]          toggle system stats panel
   [accent]reset[/]          clear conversation history
   [accent]clear[/]          redraw banner

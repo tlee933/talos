@@ -276,6 +276,50 @@ class Agent:
         except _CONNECT_ERRORS as exc:
             return {"error": str(exc)}
 
+    async def conversation_log(self, role: str, content: str, source: str = "tui") -> dict:
+        """Log a message to the shared conversation bridge."""
+        try:
+            resp = await self.http.post(
+                "/conversation/log",
+                json={"role": role, "content": content, "source": source},
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except _CONNECT_ERRORS as exc:
+            return {"error": str(exc)}
+
+    async def conversation_recent(self, limit: int = 20, source: str | None = None) -> dict:
+        """Retrieve recent shared conversation messages."""
+        try:
+            payload: dict = {"limit": limit}
+            if source:
+                payload["source"] = source
+            resp = await self.http.post("/conversation/recent", json=payload)
+            resp.raise_for_status()
+            return resp.json()
+        except _CONNECT_ERRORS as exc:
+            return {"error": str(exc)}
+
+    async def web_fetch(self, url: str) -> dict:
+        """Fetch a URL and extract readable text."""
+        try:
+            resp = await self.http.post("/web/fetch", json={"url": url})
+            resp.raise_for_status()
+            return resp.json()
+        except _CONNECT_ERRORS as exc:
+            return {"error": str(exc)}
+
+    async def web_search(self, query: str, num_results: int = 5) -> dict:
+        """Search DuckDuckGo for results."""
+        try:
+            resp = await self.http.post(
+                "/web/search", json={"query": query, "num_results": num_results},
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except _CONNECT_ERRORS as exc:
+            return {"error": str(exc)}
+
     async def memory_recall(self, session_id: str | None = None) -> dict:
         """Recall session context from Hive-Mind."""
         try:

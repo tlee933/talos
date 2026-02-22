@@ -110,6 +110,23 @@ browser.contextMenus.onClicked.addListener(async (info, tab) => {
   }
 });
 
+// Handle keyboard shortcut messages from content script
+browser.runtime.onMessage.addListener((msg) => {
+  if (msg.type !== 'CONTENT_SHORTCUT') return;
+
+  // Open sidebar so the context has somewhere to go
+  browser.sidebarAction.open();
+
+  // Relay as PAGE_CONTEXT to sidebar (reuses existing ContextChip flow)
+  if (sidebarPort) {
+    sidebarPort.postMessage({
+      type: 'PAGE_CONTEXT',
+      context: msg.context,
+      mode: msg.mode,
+    });
+  }
+});
+
 // Toolbar button toggles the sidebar
 browser.browserAction.onClicked.addListener(() => {
   browser.sidebarAction.toggle();
@@ -160,6 +177,16 @@ async function handleHealth(port) {
   }
 }
 
+function logConversation(role, content) {
+  // Fire-and-forget POST to conversation bridge
+  const base = config.apiUrl.replace(/\/+$/, '');
+  fetch(`${base}/conversation/log`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role, content: content.slice(0, 2000), source: 'firefox' }),
+  }).catch(() => {});
+}
+
 async function handleChat(port, msg) {
   const { requestId, history } = msg;
 
@@ -195,6 +222,7 @@ async function handleChat(port, msg) {
     const decoder = new TextDecoder();
     let buffer = '';
     let tokenCount = 0;
+    let fullResponse = '';
     const streamStart = Date.now();
 
     while (true) {
@@ -217,6 +245,7 @@ async function handleChat(port, msg) {
           const token = parsed.choices?.[0]?.delta?.content;
           if (token) {
             tokenCount++;
+            fullResponse += token;
             port.postMessage({ type: 'STREAM_TOKEN', requestId, token });
           }
         } catch {
@@ -228,6 +257,11 @@ async function handleChat(port, msg) {
     const elapsed = (Date.now() - streamStart) / 1000;
     const tokPerSec = elapsed > 0 ? Math.round(tokenCount / elapsed) : 0;
     port.postMessage({ type: 'STREAM_END', requestId, tokPerSec });
+
+    // Log to conversation bridge
+    const lastUserMsg = history.filter((m) => m.role === 'user').pop();
+    if (lastUserMsg) logConversation('user', lastUserMsg.content);
+    if (fullResponse) logConversation('assistant', fullResponse);
   } catch (err) {
     port.postMessage({
       type: 'STREAM_ERROR',

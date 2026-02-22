@@ -11,7 +11,7 @@ guardian that runs on your own hardware.
 │  ╔╦╗╔═╗╦  ╔═╗╔═╗           │  │  model       HiveCoder-7B 61.3 tok/s online       │
 │   ║ ╠═╣║  ║ ║╚═╗           │  │  rag         ━━━━━━━━━━━━╌╌╌╌ 75% 73 queries      │
 │   ╩ ╩ ╩╩═╝╚═╝╚═╝           │  │  learning    ━━━━━━━━━━╌╌╌╌╌╌ 64% 32/50 samples   │
-│   v0.4.0 — the bronze       │  │              ~3.7d to next train · v0.9.1         │
+│   v0.6.0 — the bronze       │  │              ~3.7d to next train · v0.9.1         │
 │ guardian                   │  │  gpu         ━━━━━━━━╌╌╌╌ 67% vram 59°C · 100%    │
 ╰────────────────────────────╯  │  redis       cluster 4.26M · 99 sessions          │
                                 │  vault       found ~/Documents/Vault              │
@@ -41,6 +41,15 @@ guardian that runs on your own hardware.
 - **Self-improving** — every interaction feeds the continuous learning pipeline
 - **Firefox sidebar** — same chat interface in the browser via Ctrl+Shift+Y,
   streaming responses through a background script proxy to Hive-Mind
+- **Markdown rendering** — assistant messages rendered with bold, italic, lists,
+  links, headers, blockquotes, code blocks with copy button
+- **Page context injection** — right-click context menus to send selection or page
+  to Talos, keyboard shortcuts (Ctrl+Shift+S/P), ContextChip display
+- **Smart ghost suggestions** — Tab-completion with context-aware follow-ups
+- **Conversation bridge** — shared history between TUI and Firefox via Hive-Mind;
+  `bridge` command to view cross-client conversations
+- **Web scraper** — `web <url>` fetches and injects page content; `search <query>`
+  queries DuckDuckGo for results
 
 ## Interactive mode
 
@@ -107,6 +116,9 @@ talos vault daily            # open/create today's daily note
 | `recall [key]`     | Recall a specific or all facts       |
 | `facts`            | List all stored facts                |
 | `suggest`          | RAG gap analysis & suggested facts   |
+| `bridge [N]`       | View shared conversation history     |
+| `web <url>`        | Fetch URL and inject as context      |
+| `search <query>`   | Search DuckDuckGo for results        |
 | `!cmd`             | Run a shell command directly         |
 | `stats`            | Toggle the system stats panel        |
 | `reset`            | Clear conversation history           |
@@ -150,10 +162,10 @@ talos CLI/TUI
 ```
 talos-firefox/
     |
-    +-- background.js -- SSE proxy to Hive-Mind, port message relay
+    +-- background.js -- SSE proxy, port relay, conversation logging
     +-- sidebar.html --- Svelte 5 chat UI (bronze theme)
     +-- api.js --------- runtime.connect() port + message helpers
-    +-- content.js ----- page context extraction (stub)
+    +-- content.js ----- page context extraction + keyboard shortcuts
 ```
 
 Hive-Mind provides the brain (inference, memory, learning). Talos is the
