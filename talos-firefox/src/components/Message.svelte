@@ -54,15 +54,15 @@
   }
 
   .user .bubble {
-    background: rgba(205, 127, 50, 0.15);
-    border: 1px solid rgba(205, 127, 50, 0.3);
+    background: rgba(218, 142, 62, 0.12);
+    border: 1px solid rgba(218, 142, 62, 0.3);
     color: var(--warm);
     white-space: pre-wrap;
   }
 
   .assistant .bubble {
     background: var(--forge-light);
-    border: 1px solid rgba(139, 115, 85, 0.3);
+    border: 1px solid rgba(154, 130, 101, 0.25);
     color: var(--warm);
   }
 
@@ -109,7 +109,7 @@
     border-left: 3px solid var(--gold);
     padding: 4px 10px;
     margin: 6px 0;
-    background: rgba(212, 165, 74, 0.08);
+    background: rgba(232, 185, 77, 0.08);
     color: var(--muted);
   }
 
@@ -135,7 +135,7 @@
     background: var(--forge-light);
     padding: 1px 5px;
     border-radius: 3px;
-    border-bottom: 1px solid rgba(212, 165, 74, 0.3);
+    border-bottom: 1px solid rgba(232, 185, 77, 0.35);
     font-family: 'JetBrains Mono', 'Fira Code', monospace;
     font-size: 12px;
   }
@@ -161,14 +161,14 @@
 
   .think-block {
     margin: 6px 0;
-    border: 1px solid rgba(255, 191, 0, 0.3);
+    border: 1px solid rgba(255, 209, 64, 0.3);
     border-radius: 6px;
     overflow: hidden;
   }
 
   .think-block summary {
     padding: 4px 10px;
-    background: rgba(255, 191, 0, 0.08);
+    background: rgba(255, 209, 64, 0.08);
     color: var(--amber);
     font-size: 12px;
     font-style: italic;
@@ -177,7 +177,7 @@
   }
 
   .think-block summary:hover {
-    background: rgba(255, 191, 0, 0.15);
+    background: rgba(255, 209, 64, 0.15);
   }
 
   .think-content {

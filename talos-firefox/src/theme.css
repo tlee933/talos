@@ -1,13 +1,13 @@
 :root {
-  --bronze: #CD7F32;
-  --gold: #D4A54A;
-  --amber: #FFBF00;
-  --verdigris: #43B3AE;
-  --oxidized: #C1440E;
-  --forge: #1A1A2E;
-  --forge-light: #242440;
-  --warm: #E8E0D4;
-  --muted: #8B7355;
+  --bronze: #DA8E3E;
+  --gold: #E8B94D;
+  --amber: #FFD140;
+  --verdigris: #4CC9C3;
+  --oxidized: #D4501A;
+  --forge: #141418;
+  --forge-light: #1C1C22;
+  --warm: #EDE5D8;
+  --muted: #9A8265;
 }
 
 * {
@@ -45,5 +45,5 @@ html, body {
 }
 
 ::selection {
-  background: rgba(205, 127, 50, 0.3);
+  background: rgba(218, 142, 62, 0.35);
 }
