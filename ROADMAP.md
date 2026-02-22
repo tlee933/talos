@@ -103,6 +103,13 @@ Current: **v0.7.0** — tool-use, reasoning, conversation persistence, 88 tok/s
 
 ## Phase 6: Desktop Integration (v0.8)
 
+### Smarter ghost suggestions
+- [ ] Context-aware suggestion ranking — weigh by recent conversation topic, active page, time of day
+- [ ] Slash command suggestions with parameter hints (`/web <url>`, `/search <query>`, `/reason <query>`)
+- [ ] Preemptive suggestion chains — multi-step follow-ups based on last assistant response
+- [ ] Expand `suggestions.test.js` — context-aware matching, slash commands, preemptive triggers, edge cases
+- [ ] TUI suggestion parity — port ghost suggestions from sidebar to prompt_toolkit completer
+
 ### KDE Plasma widget
 - [ ] Desktop widget showing Talos status, quick-ask input, recent conversations
 - [ ] Drag-and-drop files onto widget to inject as context
