@@ -9,7 +9,7 @@
 │  ╔╦╗╔═╗╦  ╔═╗╔═╗           │  │  model       HiveCoder-7B 88 tok/s online           │
 │   ║ ╠═╣║  ║ ║╚═╗           │  │  rag         ━━━━━━━━━━━━╌╌╌╌ 75% 73 queries      │
 │   ╩ ╩ ╩╩═╝╚═╝╚═╝           │  │  learning    ━━━━━━━━━━╌╌╌╌╌╌ 64% 32/50 samples   │
-│   v0.7.2 — the bronze      │  │              ~3.7d to next train · v0.9.1         │
+│   v0.7.3 — the bronze      │  │              ~3.7d to next train · v0.9.1         │
 │ guardian                   │  │  gpu         ━━━━━━━━╌╌╌╌ 67% vram 59°C · 100%    │
 ╰────────────────────────────╯  │  redis       cluster 4.26M · 99 sessions          │
                                 │  vault       found ~/Documents/Vault              │
@@ -21,6 +21,10 @@
 
 ### TUI (Terminal)
 
+- **Intelligent model routing** — queries auto-route to the best model:
+  HiveCoder-7B (88 tok/s) for code/shell, R1-Distill-14B (55 tok/s) for
+  reasoning. R1 answers auto-feed HiveCoder's LoRA training — the bigger
+  model teaches the smaller one
 - **Agentic shell execution** — Talos reasons through your question,
   proposes shell commands step-by-step, executes with confirmation, and
   summarizes results
@@ -76,7 +80,8 @@
 - **Input history** — up/down arrow to recall previous messages
 - **Multi-provider** — Hive-Mind, Ollama, OpenAI, Anthropic, or custom
   endpoints with per-provider auth
-- **Tok/s display** — live tokens-per-second in the toolbar with gold pulse
+- **Tok/s display** — live tokens-per-second in the toolbar with gold pulse;
+  shows which model answered (HiveCoder-7B or R1-Distill-14B)
 
 ### Cross-Client
 
@@ -105,7 +110,7 @@
   analyzing...
 
   You have ~10.4 GB VRAM free on your R9700.
-  Two llama-server instances are loaded (HiveCoder-7B + Qwen3-14B).
+  Two llama-server instances are loaded (HiveCoder-7B + R1-Distill-14B).
 ```
 
 Confirmation during execution:
@@ -178,7 +183,7 @@ talos vault daily            # open/create today's daily note
 |--------------|----------------------------------------------------|
 | **OS**       | Fedora 43 Kinoite (rpm-ostree, Wayland)            |
 | **Desktop**  | KDE Plasma 6                                       |
-| **LLM**      | HiveCoder-7B (LoRA fine-tuned, GGUF via llama.cpp) |
+| **LLM**      | HiveCoder-7B (code, 88 tok/s) + R1-Distill-14B (reasoning, 55 tok/s) |
 | **Memory**   | Hive-Mind (Redis cluster, semantic RAG)             |
 | **TUI**      | Rich + prompt_toolkit (Python 3.12+)               |
 | **Browser**  | Zen / Firefox sidebar extension (Svelte 5, Vite, MV2) |
@@ -214,10 +219,13 @@ talos-firefox/
          │
          ▼ /v1/chat/completions, /fact/*, /memory/*, /conversation/*, /web/*
     Hive-Mind @ :8090
-    ├── HiveCoder-7B @ :8089 (inference, 88 tok/s)
+    ├── Model Router (intent classifier → code or reasoning)
+    ├── HiveCoder-7B @ :8089 (code/shell/tools, 88 tok/s)
+    ├── R1-Distill-14B @ :8080 (reasoning/analysis, 55 tok/s)
     ├── Redis Cluster @ :7000-7005 (memory, sessions, RAG)
     ├── Semantic RAG (bge-small-en-v1.5 embeddings)
     └── Continuous Learning Pipeline (LoRA → GGUF → hot-swap)
+        └── R1 answers auto-feed HiveCoder's training (knowledge distillation)
 ```
 
 Hive-Mind provides the brain (inference, memory, learning). Talos is the
