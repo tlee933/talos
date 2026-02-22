@@ -23,6 +23,8 @@
     'Debug this error',
     'Optimize this code',
     'What is the difference between ',
+    '/search ',
+    '/web ',
   ];
 
   // Build context-aware follow-up suggestions from last assistant response

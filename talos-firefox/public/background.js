@@ -145,6 +145,8 @@ browser.runtime.onConnect.addListener((port) => {
     else if (msg.type === 'HEALTH_CHECK') handleHealth(port);
     else if (msg.type === 'CONFIG_GET') handleConfigGet(port);
     else if (msg.type === 'CONFIG_UPDATE') handleConfigUpdate(port, msg);
+    else if (msg.type === 'WEB_FETCH') handleWebFetch(port, msg);
+    else if (msg.type === 'WEB_SEARCH') handleWebSearch(port, msg);
   });
 
   port.onDisconnect.addListener(() => {
@@ -185,6 +187,38 @@ function logConversation(role, content) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ role, content: content.slice(0, 2000), source: 'firefox' }),
   }).catch(() => {});
+}
+
+async function handleWebFetch(port, msg) {
+  const { requestId, url } = msg;
+  try {
+    const base = config.apiUrl.replace(/\/+$/, '');
+    const res = await fetch(`${base}/web/fetch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    const data = await res.json();
+    port.postMessage({ type: 'WEB_FETCH_RESULT', requestId, data });
+  } catch (err) {
+    port.postMessage({ type: 'WEB_FETCH_RESULT', requestId, data: { error: err.message } });
+  }
+}
+
+async function handleWebSearch(port, msg) {
+  const { requestId, query } = msg;
+  try {
+    const base = config.apiUrl.replace(/\/+$/, '');
+    const res = await fetch(`${base}/web/search`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, num_results: 5 }),
+    });
+    const data = await res.json();
+    port.postMessage({ type: 'WEB_SEARCH_RESULT', requestId, data });
+  } catch (err) {
+    port.postMessage({ type: 'WEB_SEARCH_RESULT', requestId, data: { error: err.message } });
+  }
 }
 
 async function handleChat(port, msg) {

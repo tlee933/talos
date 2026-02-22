@@ -44,6 +44,8 @@
     padding: 8px 12px;
     border-radius: 8px;
     word-wrap: break-word;
+    user-select: text;
+    cursor: text;
   }
 
   .user .bubble {

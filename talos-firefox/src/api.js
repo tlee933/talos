@@ -7,6 +7,8 @@ let callbacks = {
   onHealth: null,
   onConfigLoaded: null,
   onContextReceived: null,
+  onWebFetchResult: null,
+  onWebSearchResult: null,
 };
 
 export function setCallbacks(cbs) {
@@ -38,6 +40,12 @@ export function connect() {
         break;
       case 'PAGE_CONTEXT':
         callbacks.onContextReceived?.(msg.context, msg.mode);
+        break;
+      case 'WEB_FETCH_RESULT':
+        callbacks.onWebFetchResult?.(msg.requestId, msg.data);
+        break;
+      case 'WEB_SEARCH_RESULT':
+        callbacks.onWebSearchResult?.(msg.requestId, msg.data);
         break;
     }
   });
@@ -75,6 +83,22 @@ export function getConfig() {
 export function updateConfig(config) {
   if (!port) return;
   port.postMessage({ type: 'CONFIG_UPDATE', config });
+}
+
+export function sendWebFetch(url) {
+  if (!port) connect();
+  if (!port) return null;
+  const requestId = crypto.randomUUID();
+  port.postMessage({ type: 'WEB_FETCH', requestId, url });
+  return requestId;
+}
+
+export function sendWebSearch(query) {
+  if (!port) connect();
+  if (!port) return null;
+  const requestId = crypto.randomUUID();
+  port.postMessage({ type: 'WEB_SEARCH', requestId, query });
+  return requestId;
 }
 
 export function disconnect() {

@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { connect, setCallbacks, sendChat, checkHealth, getConfig, updateConfig, disconnect } from './api.js';
+  import { connect, setCallbacks, sendChat, sendWebFetch, sendWebSearch, checkHealth, getConfig, updateConfig, disconnect } from './api.js';
   import { DEFAULT_CONFIG } from './providers.js';
   import Toolbar from './components/Toolbar.svelte';
   import MessageList from './components/MessageList.svelte';
@@ -24,6 +24,30 @@
   }
 
   function handleSend(text) {
+    // Handle /web command
+    if (text.startsWith('/web ')) {
+      const url = text.slice(5).trim();
+      if (!url) return;
+      messages.push({ role: 'user', content: text });
+      messages.push({ role: 'assistant', content: 'Fetching...' });
+      streaming = true;
+      const reqId = sendWebFetch(url);
+      activeRequestId = reqId;
+      return;
+    }
+
+    // Handle /search command
+    if (text.startsWith('/search ')) {
+      const query = text.slice(8).trim();
+      if (!query) return;
+      messages.push({ role: 'user', content: text });
+      messages.push({ role: 'assistant', content: 'Searching...' });
+      streaming = true;
+      const reqId = sendWebSearch(query);
+      activeRequestId = reqId;
+      return;
+    }
+
     let userContent = text;
 
     // Inject page context into the message
@@ -110,10 +134,43 @@
       onContextReceived(context, mode) {
         pageContext = context;
         contextMode = mode;
-
-        // For "summarize" mode, auto-fill the input hint
-        // (the actual auto-send is handled via the InputBar text prop if desired,
-        //  but we keep it simple — user sees the chip and can type or just hit enter)
+      },
+      onWebFetchResult(reqId, data) {
+        if (reqId !== activeRequestId) return;
+        streaming = false;
+        activeRequestId = null;
+        const last = messages[messages.length - 1];
+        if (last && last.role === 'assistant') {
+          if (data.error) {
+            last.content = `Error: ${data.error}`;
+          } else {
+            const title = data.title || 'Untitled';
+            const preview = (data.text || '').slice(0, 800);
+            last.content = `**${title}**\n\n${preview}${data.text && data.text.length > 800 ? '\n\n*(truncated)*' : ''}`;
+            // Inject full text into history for follow-up questions
+            messages.push({ role: 'system', content: `[Web page content from ${data.url}]: ${(data.text || '').slice(0, 4000)}` });
+          }
+        }
+      },
+      onWebSearchResult(reqId, data) {
+        if (reqId !== activeRequestId) return;
+        streaming = false;
+        activeRequestId = null;
+        const last = messages[messages.length - 1];
+        if (last && last.role === 'assistant') {
+          if (data.error) {
+            last.content = `Error: ${data.error}`;
+          } else {
+            const results = data.results || [];
+            if (results.length === 0) {
+              last.content = 'No results found.';
+            } else {
+              last.content = results.map((r, i) =>
+                `**${i + 1}. ${r.title || 'Untitled'}**\n[${r.url}](${r.url})\n${r.snippet || ''}`
+              ).join('\n\n');
+            }
+          }
+        }
       },
     });
 
