@@ -205,10 +205,15 @@
     // Prune if needed before sending
     pruneHistory();
 
-    // Snapshot history including the new user message (exclude empty assistant placeholder)
+    // Snapshot history for API — strip think blocks (display-only, waste context budget)
+    const stripThink = (s) => s.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
     const history = messages
       .filter((m) => m.content)
-      .map((m) => ({ role: m.role, content: m.content }));
+      .map((m) => ({
+        role: m.role,
+        content: m.role === 'assistant' ? stripThink(m.content) : m.content,
+      }))
+      .filter((m) => m.content);
 
     messages.push({ role: 'assistant', content: '' });
 
