@@ -11,7 +11,7 @@ guardian that runs on your own hardware.
 │  ╔╦╗╔═╗╦  ╔═╗╔═╗           │  │  model       HiveCoder-7B 61.3 tok/s online       │
 │   ║ ╠═╣║  ║ ║╚═╗           │  │  rag         ━━━━━━━━━━━━╌╌╌╌ 75% 73 queries      │
 │   ╩ ╩ ╩╩═╝╚═╝╚═╝           │  │  learning    ━━━━━━━━━━╌╌╌╌╌╌ 64% 32/50 samples   │
-│   v0.6.0 — the bronze       │  │              ~3.7d to next train · v0.9.1         │
+│   v0.6.2 — the bronze       │  │              ~3.7d to next train · v0.9.1         │
 │ guardian                   │  │  gpu         ━━━━━━━━╌╌╌╌ 67% vram 59°C · 100%    │
 ╰────────────────────────────╯  │  redis       cluster 4.26M · 99 sessions          │
                                 │  vault       found ~/Documents/Vault              │
@@ -39,7 +39,7 @@ guardian that runs on your own hardware.
 - **Obsidian vault integration** — search, read, create notes from the terminal
 - **KDE desktop tools** — notifications, clipboard, file search (Baloo)
 - **Self-improving** — every interaction feeds the continuous learning pipeline
-- **Firefox sidebar** — same chat interface in the browser via Ctrl+Shift+Y,
+- **Firefox sidebar** — same chat interface in the browser via Alt+Shift+T,
   streaming responses through a background script proxy to Hive-Mind
 - **Markdown rendering** — assistant messages rendered with bold, italic, lists,
   links, headers, blockquotes, code blocks with copy button

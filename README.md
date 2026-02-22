@@ -9,7 +9,7 @@
 │  ╔╦╗╔═╗╦  ╔═╗╔═╗           │  │  model       HiveCoder-7B 61.3 tok/s online       │
 │   ║ ╠═╣║  ║ ║╚═╗           │  │  rag         ━━━━━━━━━━━━╌╌╌╌ 75% 73 queries      │
 │   ╩ ╩ ╩╩═╝╚═╝╚═╝           │  │  learning    ━━━━━━━━━━╌╌╌╌╌╌ 64% 32/50 samples   │
-│   v0.3.1 — the bronze      │  │              ~3.7d to next train · v0.9.1         │
+│   v0.6.2 — the bronze      │  │              ~3.7d to next train · v0.9.1         │
 │ guardian                   │  │  gpu         ━━━━━━━━╌╌╌╌ 67% vram 59°C · 100%    │
 ╰────────────────────────────╯  │  redis       cluster 4.26M · 99 sessions          │
                                 │  vault       found ~/Documents/Vault              │
@@ -19,28 +19,53 @@
 
 ## Features
 
-- **Agentic shell execution** — ask a question, Talos reasons through it,
-  proposes commands step-by-step, executes with your confirmation, and
-  summarizes results (Open Interpreter-style)
+### TUI (Terminal)
+
+- **Agentic shell execution** — Talos reasons through your question,
+  proposes shell commands step-by-step, executes with confirmation, and
+  summarizes results
 - **Streaming output** — token-by-token SSE streaming with Rich Live display
-- **Context injection** — cwd, git branch, and diff stats automatically injected
-  into the LLM system prompt for every query
+- **Context injection** — cwd, git branch, and diff stats auto-injected into
+  every query
 - **File & clipboard references** — `@file.py` injects file contents, `@clip`
-  injects clipboard into your query
-- **Hive-Mind memory** — `remember`/`recall`/`facts` commands for persistent
-  knowledge storage across sessions
-- **Session persistence** — conversation context saved on exit, restored on startup
-- **Dangerous command detection** — destructive commands flagged with warnings,
-  always prompted regardless of confirm mode
-- **Live system dashboard** — startup banner shows model tok/s, RAG hit rate,
-  learning pipeline progress, GPU VRAM/temp, Redis cluster status
+  injects clipboard
+- **Hive-Mind memory** — `remember`/`recall`/`facts` for persistent knowledge
+  across sessions
+- **Session persistence** — conversation saved on exit, restored on startup
+- **Dangerous command detection** — destructive commands flagged with warnings
+- **Live system dashboard** — model tok/s, RAG hit rate, learning progress,
+  GPU VRAM/temp, Redis cluster status
 - **Readline input** — arrow keys, persistent history, Ctrl-R reverse search,
-  tab completion for commands, `@` file references, PATH executables, and paths
-- **Semantic RAG** — the model knows your system, your projects, your preferences
+  tab completion for commands, `@` file references, and paths
+- **Semantic RAG** — the model knows your system, projects, and preferences
 - **Obsidian vault integration** — search, read, create notes from the terminal
 - **KDE desktop tools** — notifications, clipboard, file search (Baloo)
 - **Self-improving** — every interaction feeds the continuous learning pipeline
-- **Multi-turn conversations** — context carries across the session
+
+### Firefox Sidebar Extension
+
+- **Browser chat** — same Talos chat interface in a Firefox sidebar panel
+  (Alt+Shift+T to toggle)
+- **Streaming** — real-time token-by-token responses via background script
+  SSE proxy
+- **Markdown rendering** — bold, italic, lists, links, headers, blockquotes,
+  code blocks with copy button
+- **Page context injection** — right-click context menus (Send Selection,
+  Send Page, Summarize Page) and keyboard shortcuts (Ctrl+Shift+S/P)
+- **Web search & fetch** — `/search <query>` for DuckDuckGo results,
+  `/web <url>` to fetch and inject page content
+- **Smart ghost suggestions** — Tab-completion with context-aware follow-ups
+- **Input history** — up/down arrow to recall previous messages
+- **Multi-provider** — Hive-Mind, Ollama, OpenAI, Anthropic, or custom
+  endpoints with per-provider auth
+- **Tok/s display** — live tokens-per-second in the toolbar after each response
+
+### Cross-Client
+
+- **Conversation bridge** — shared history between TUI and Firefox via
+  Hive-Mind; `bridge` command to view cross-client conversations
+- **Web scraper** — `web <url>` and `search <query>` available in both TUI
+  and sidebar
 
 ## Agentic execution
 
@@ -61,19 +86,17 @@
 
   analyzing...
 
-╭──────────────────────────────────────────╮
-│ You have ~10.4 GB VRAM free on your      │
-│ R9700. Two llama-server instances are    │
-│ loaded (HiveCoder-7B + Qwen3-14B).      │
-╰──────────────────────────────────────────╯
+  You have ~10.4 GB VRAM free on your R9700.
+  Two llama-server instances are loaded (HiveCoder-7B + Qwen3-14B).
 ```
 
-The LLM reasons, proposes shell commands as numbered steps, and you control execution:
+Confirmation during execution:
 - **y** / **enter** — run the command
 - **n** — skip this step
 - **a** — auto-run all remaining steps
 
-Output feeds back to the LLM for continued reasoning (up to 8 steps).
+After execution, rate the response with **+** / **-** to feed the learning
+pipeline.
 
 ## Quick start
 
@@ -82,7 +105,8 @@ pip install -e .
 talos                        # interactive REPL (agentic mode)
 ```
 
-Requires [Hive-Mind](https://github.com/tlee933/hive-mind) running locally for LLM inference and memory.
+Requires [Hive-Mind](https://github.com/tlee933/hive-mind) running locally
+for LLM inference and memory.
 
 ## Usage
 
@@ -106,12 +130,15 @@ talos vault daily            # open/create today's daily note
 | `remember k = v`   | Store a fact in Hive-Mind            |
 | `recall [key]`     | Recall a specific or all facts       |
 | `facts`            | List all stored facts                |
+| `suggest`          | RAG gap analysis & suggested facts   |
+| `bridge [N]`       | View shared conversation history     |
+| `web <url>`        | Fetch URL and inject as context      |
+| `search <query>`   | Search DuckDuckGo for results        |
 | `!cmd`             | Run a shell command directly         |
 | `stats`            | Toggle the system stats panel        |
 | `reset`            | Clear conversation history           |
 | `clear`            | Redraw banner with fresh stats       |
 | `help`             | Show all commands and keybindings    |
-| `exit`             | Quit                                 |
 
 ### Keybindings
 
@@ -124,29 +151,39 @@ talos vault daily            # open/create today's daily note
 
 ## Stack
 
-| Component   | Technology                                         |
-|-------------|----------------------------------------------------|
-| **OS**      | Fedora 43 Kinoite (rpm-ostree, Wayland)            |
-| **Desktop** | KDE Plasma 6                                       |
-| **LLM**     | HiveCoder-7B (LoRA fine-tuned, GGUF via llama.cpp) |
-| **Memory**  | Hive-Mind (Redis cluster, semantic RAG)             |
-| **TUI**     | Rich + prompt_toolkit                               |
-| **GPU**     | AMD Radeon R9700 (32GB VRAM, ROCm 7.12)            |
+| Component    | Technology                                         |
+|--------------|----------------------------------------------------|
+| **OS**       | Fedora 43 Kinoite (rpm-ostree, Wayland)            |
+| **Desktop**  | KDE Plasma 6                                       |
+| **LLM**      | HiveCoder-7B (LoRA fine-tuned, GGUF via llama.cpp) |
+| **Memory**   | Hive-Mind (Redis cluster, semantic RAG)             |
+| **TUI**      | Rich + prompt_toolkit (Python 3.12+)               |
+| **Browser**  | Firefox sidebar extension (Svelte 5, Vite, MV2)   |
+| **GPU**      | AMD Radeon R9700 (32GB VRAM, ROCm 7.12)           |
 
 ## Architecture
 
 ```
 talos CLI/TUI
     │
-    ├── tui.py ────── agentic REPL, commands, context injection, session lifecycle
-    ├── agent.py ──── Hive-Mind HTTP API (chat, facts, memory, streaming)
+    ├── tui.py ────── agentic REPL, commands, learning feedback, session lifecycle
+    ├── agent.py ──── Hive-Mind HTTP API (chat, facts, memory, learning, streaming)
     ├── context.py ── env gathering (cwd, git), @file/@clip expansion
     ├── banner.py ─── startup banner with live system stats + tok/s bench
     ├── shell.py ──── async subprocess execution
     ├── kde.py ────── notify-send, wl-clipboard, baloosearch
     └── obsidian.py ─ vault filesystem access + obsidian:// URI
+
+talos-firefox/
+    │
+    ├── background.js ── SSE proxy, port relay, web fetch/search, conversation logging
+    ├── sidebar.html ─── Svelte 5 chat UI (bronze theme)
+    ├── api.js ────────── runtime.connect() port + message helpers
+    ├── content.js ────── page context extraction + keyboard shortcuts (Ctrl+Shift+S/P)
+    └── src/components/ ─ Toolbar, SettingsPanel, MessageList, Message, CodeBlock, InputBar
+
          │
-         ▼ /v1/chat/completions, /fact/*, /memory/*
+         ▼ /v1/chat/completions, /fact/*, /memory/*, /conversation/*, /web/*
     Hive-Mind @ :8090
     ├── HiveCoder-7B @ :8089 (inference, ~60 tok/s)
     ├── Redis Cluster @ :7000-7005 (memory, sessions, RAG)
