@@ -137,6 +137,10 @@ class Agent:
         self.history: list[Turn] = []
         self.max_history = 40
         self.conversation_id: str = str(uuid.uuid4())[:8]
+        # Routing metadata from last response
+        self._last_model_id: str = ""
+        self._last_model_used: str = ""
+        self._last_routing_reason: str = ""
 
     def _messages(
         self,
@@ -172,6 +176,7 @@ class Agent:
         context: str | None = None,
         tools: list[dict] | None = None,
         tool_prompt: str | None = None,
+        reason_mode: bool = False,
     ) -> dict:
         payload = {
             "model": "hivecoder-7b",
@@ -183,6 +188,8 @@ class Agent:
             payload["stream"] = True
         if tools:
             payload["tools"] = tools
+        if reason_mode:
+            payload["reason_mode"] = True
         return payload
 
     # --- Non-streaming (fallback) ---
@@ -229,10 +236,12 @@ class Agent:
         context: str | None = None,
         tools: list[dict] | None = None,
         tool_prompt: str | None = None,
+        reason_mode: bool = False,
     ) -> AsyncIterator[str]:
         """Stream a chat response, yielding delta content strings.
 
         Accumulates the full response and appends to history when done.
+        Captures routing headers (X-Model-Id, X-Model-Used, X-Routing-Reason).
         """
         self.history.append(Turn(role="user", content=message))
         accumulated = []
@@ -242,9 +251,13 @@ class Agent:
             async with self.http.stream(
                 "POST",
                 "/v1/chat/completions",
-                json=self._payload(system, stream=True, context=context, tools=tools, tool_prompt=tool_prompt),
+                json=self._payload(system, stream=True, context=context, tools=tools, tool_prompt=tool_prompt, reason_mode=reason_mode),
             ) as resp:
                 resp.raise_for_status()
+                # Capture routing headers
+                self._last_model_id = resp.headers.get("x-model-id", "")
+                self._last_model_used = resp.headers.get("x-model-used", "")
+                self._last_routing_reason = resp.headers.get("x-routing-reason", "")
                 async for line in resp.aiter_lines():
                     chunk = _parse_sse_line(line, sse_state)
                     if chunk is None:

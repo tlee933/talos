@@ -18,6 +18,7 @@
   let config = $state({ ...DEFAULT_CONFIG });
   let tokPerSec = $state(null);
   let tokUpdatedAt = $state(0);
+  let lastModelUsed = $state('');
   let healthInterval;
 
   // Page context state
@@ -174,7 +175,7 @@
 
     messages.push({ role: 'assistant', content: '' });
 
-    const reqId = sendChat(history);
+    const reqId = sendChat(history, { reasonMode });
     if (!reqId) return;
 
     activeRequestId = reqId;
@@ -217,13 +218,16 @@
           last.content += token;
         }
       },
-      onStreamEnd(reqId, tps) {
+      onStreamEnd(reqId, tps, routing) {
         if (reqId !== activeRequestId) return;
         streaming = false;
         activeRequestId = null;
         if (tps != null) {
           tokPerSec = tps;
           tokUpdatedAt = Date.now();
+        }
+        if (routing?.modelUsed) {
+          lastModelUsed = routing.modelUsed;
         }
         // Auto-save after each response
         debouncedSave();
@@ -324,6 +328,7 @@
   {config}
   {tokPerSec}
   {tokUpdatedAt}
+  modelUsed={lastModelUsed}
   onConfigChange={handleConfigChange}
   onToggleHistory={toggleHistoryPanel}
   onNewConversation={startNewConversation}

@@ -333,20 +333,26 @@ async function handleConvDelete(port, msg) {
 }
 
 async function handleChat(port, msg) {
-  const { requestId, history } = msg;
+  const { requestId, history, reasonMode } = msg;
 
   const systemPrompt = {
     role: 'system',
     content: 'You are Talos, a local-first AI assistant. Be concise and helpful. Format code with fenced code blocks.',
   };
 
-  const body = JSON.stringify({
+  const payload = {
     model: config.model,
     messages: [systemPrompt, ...history],
     temperature: config.temperature,
     max_tokens: config.maxTokens,
     stream: true,
-  });
+  };
+
+  if (reasonMode) {
+    payload.reason_mode = true;
+  }
+
+  const body = JSON.stringify(payload);
 
   try {
     port.postMessage({ type: 'STREAM_START', requestId });
@@ -362,6 +368,11 @@ async function handleChat(port, msg) {
       port.postMessage({ type: 'STREAM_ERROR', requestId, error: `HTTP ${res.status}: ${text}` });
       return;
     }
+
+    // Capture routing headers
+    const modelUsed = res.headers.get('x-model-used') || '';
+    const modelId = res.headers.get('x-model-id') || '';
+    const routingReason = res.headers.get('x-routing-reason') || '';
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -432,7 +443,14 @@ async function handleChat(port, msg) {
 
     const elapsed = (Date.now() - streamStart) / 1000;
     const tokPerSec = elapsed > 0 ? Math.round(tokenCount / elapsed) : 0;
-    port.postMessage({ type: 'STREAM_END', requestId, tokPerSec });
+    port.postMessage({
+      type: 'STREAM_END',
+      requestId,
+      tokPerSec,
+      modelUsed,
+      modelId,
+      routingReason,
+    });
 
     // Log to conversation bridge
     const lastUserMsg = history.filter((m) => m.role === 'user').pop();

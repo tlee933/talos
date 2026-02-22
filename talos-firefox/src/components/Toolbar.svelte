@@ -1,7 +1,7 @@
 <script>
   import SettingsPanel from './SettingsPanel.svelte';
 
-  let { connected = false, config = {}, tokPerSec = null, tokUpdatedAt = 0, onConfigChange, onToggleHistory, onNewConversation } = $props();
+  let { connected = false, config = {}, tokPerSec = null, tokUpdatedAt = 0, modelUsed = '', onConfigChange, onToggleHistory, onNewConversation } = $props();
   let settingsOpen = $state(false);
   let pulsing = $state(false);
 
@@ -30,7 +30,7 @@
   <div class="toolbar">
     <span class="dot" class:connected class:disconnected={!connected}></span>
     {#if connected}
-      <span class="model">{config.model || 'unknown'}</span>
+      <span class="model">{modelUsed || config.model || 'unknown'}</span>
       <span class="separator">|</span>
       <span class="tok-rate" class:pulse={pulsing}>{tokPerSec != null ? `${tokPerSec} tok/s` : '-- tok/s'}</span>
     {:else}

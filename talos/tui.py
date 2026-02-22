@@ -384,13 +384,14 @@ async def _stream_response(
     context: str | None = None,
     tools: list[dict] | None = None,
     tool_prompt: str | None = None,
+    reason_mode: bool = False,
 ) -> ParsedResponse:
     """Stream a chat response with live display, return ParsedResponse."""
     accumulated = []
     display_text = Text()
 
     with Live(display_text, console=console, refresh_per_second=15, transient=True) as live:
-        async for chunk in agent.stream_chat(message, context=context, tools=tools, tool_prompt=tool_prompt):
+        async for chunk in agent.stream_chat(message, context=context, tools=tools, tool_prompt=tool_prompt, reason_mode=reason_mode):
             accumulated.append(chunk)
             display_text.append(chunk, style="dim")
             live.update(display_text)
@@ -448,19 +449,63 @@ async def _stream_feed_tool_result(
 
 # --- Agentic loop ---
 
-def build_interaction(query: str, commands: list[dict], response_summary: str = "") -> dict | None:
+def build_interaction(
+    query: str,
+    commands: list[dict],
+    response_summary: str = "",
+    model_used: str = "",
+    model_id: str = "",
+    routing_reason: str = "",
+) -> dict | None:
     """Build a learning-queue interaction dict from agentic step data.
 
     Returns None if no commands were executed (pure-reasoning query).
     """
     if not commands:
         return None
-    return {
+    interaction = {
         "user_query": query,
         "commands": commands,
         "response_summary": response_summary[:500],
         "success": all(c.get("success", False) for c in commands),
     }
+    if model_id:
+        interaction["model_used"] = model_used
+        interaction["model_id"] = model_id
+        interaction["routing_reason"] = routing_reason
+        # Tag R1 responses for distillation
+        if "r1" in model_id.lower():
+            interaction["model_source"] = "r1-distill"
+    return interaction
+
+
+def build_reasoning_interaction(
+    query: str,
+    response_summary: str,
+    model_used: str = "",
+    model_id: str = "",
+    routing_reason: str = "",
+) -> dict | None:
+    """Build a learning-queue interaction for pure-reasoning R1 answers.
+
+    These have no commands but still feed the distillation pipeline.
+    Returns None if response is too short.
+    """
+    if len(response_summary) < 50:
+        return None
+    interaction = {
+        "type": "reasoning",
+        "user_query": query,
+        "response_summary": response_summary[:2000],
+        "success": True,
+    }
+    if model_id:
+        interaction["model_used"] = model_used
+        interaction["model_id"] = model_id
+        interaction["routing_reason"] = routing_reason
+        if "r1" in model_id.lower():
+            interaction["model_source"] = "r1-distill"
+    return interaction
 
 
 async def _agentic_step(
@@ -840,6 +885,7 @@ async def run(config: Config):
             parsed = await _stream_response(
                 agent, message, context=full_context,
                 tools=tools_schema, tool_prompt=tool_prompt,
+                reason_mode=reason_mode,
             )
 
             # Handle connection errors with retry
@@ -850,6 +896,7 @@ async def run(config: Config):
                 parsed = await _stream_response(
                     agent, message, context=full_context,
                     tools=tools_schema, tool_prompt=tool_prompt,
+                    reason_mode=reason_mode,
                 )
                 if parsed.error:
                     console.print(f"\n  [err]{parsed.error}[/]\n")
@@ -857,6 +904,14 @@ async def run(config: Config):
                 disconnected = False
 
             disconnected = False
+
+            # Capture routing metadata
+            model_id = agent._last_model_id
+            model_used = agent._last_model_used
+            routing_reason = agent._last_routing_reason
+            if model_used and "r1" in model_id.lower():
+                console.print(f"  [dim]routed → {model_used}[/]")
+
             auto_suggest.update_context(parsed.raw[:2000])
             interaction = await _agentic_step(
                 agent, parsed, session, config,
@@ -868,15 +923,36 @@ async def run(config: Config):
             asyncio.create_task(agent.conversation_log("user", message, "tui"))
             asyncio.create_task(agent.conversation_log("assistant", parsed.raw[:2000], "tui"))
 
+            # If no commands but R1 produced a reasoning answer, log for distillation
+            if interaction is None and model_id and "r1" in model_id.lower():
+                interaction = build_reasoning_interaction(
+                    message, parsed.raw[:2000],
+                    model_used=model_used, model_id=model_id,
+                    routing_reason=routing_reason,
+                )
+                if interaction:
+                    interaction["rating"] = "positive"
+                    console.print("  [ok]\u25b2[/] [dim]r1 reasoning → auto-positive[/]")
+                    asyncio.create_task(agent.learning_queue_add(interaction))
+
             # Auto-rate and log interaction if commands were executed
-            if interaction:
-                # Auto-rate based on execution success
-                if interaction.get("success"):
+            if interaction and "rating" not in interaction:
+                # R1 responses get auto-positive for distillation
+                if model_id and "r1" in model_id.lower():
+                    interaction["rating"] = "positive"
+                    interaction["model_source"] = "r1-distill"
+                    console.print("  [ok]\u25b2[/] [dim]r1 → auto-positive[/]")
+                elif interaction.get("success"):
                     interaction["rating"] = "positive"
                     console.print("  [ok]\u25b2[/] [dim]auto-rated positive[/]")
                 else:
                     interaction["rating"] = "negative"
                     console.print("  [err]\u25bc[/] [dim]auto-rated negative[/]")
+                # Add model metadata
+                if model_id:
+                    interaction.setdefault("model_used", model_used)
+                    interaction.setdefault("model_id", model_id)
+                    interaction.setdefault("routing_reason", routing_reason)
                 asyncio.create_task(agent.learning_queue_add(interaction))
 
                 # Still allow manual override
@@ -907,11 +983,10 @@ async def run(config: Config):
                     if line == "help":
                         _help()
                         continue
+                    # Reset reason_mode — new query from rating prompt is not a reason query
+                    reason_mode = False
                     # Otherwise treat as a new query — expand and send
                     message, ref_context = await expand_references_async(line)
-                    if reason_mode:
-                        from talos.agent import REASON_SUFFIX
-                        message = message + REASON_SUFFIX
                     env_context = ""
                     if config.context_injection:
                         try:

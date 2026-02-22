@@ -31,7 +31,11 @@ export function connect() {
         callbacks.onToken?.(msg.requestId, msg.token);
         break;
       case 'STREAM_END':
-        callbacks.onStreamEnd?.(msg.requestId, msg.tokPerSec);
+        callbacks.onStreamEnd?.(msg.requestId, msg.tokPerSec, {
+          modelUsed: msg.modelUsed || '',
+          modelId: msg.modelId || '',
+          routingReason: msg.routingReason || '',
+        });
         break;
       case 'STREAM_ERROR':
         callbacks.onStreamError?.(msg.requestId, msg.error);
@@ -78,11 +82,11 @@ export function connect() {
   return port;
 }
 
-export function sendChat(history) {
+export function sendChat(history, { reasonMode = false } = {}) {
   if (!port) connect();
   if (!port) return null;
   const requestId = crypto.randomUUID();
-  port.postMessage({ type: 'CHAT', requestId, history });
+  port.postMessage({ type: 'CHAT', requestId, history, reasonMode });
   return requestId;
 }
 
