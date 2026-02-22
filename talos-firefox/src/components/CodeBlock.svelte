@@ -49,7 +49,7 @@
   }
 
   .language {
-    color: var(--bronze);
+    color: var(--gold);
     font-weight: 600;
   }
 

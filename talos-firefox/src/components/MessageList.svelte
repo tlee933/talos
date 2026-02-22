@@ -60,8 +60,8 @@
     font-family: serif;
     font-size: 48px;
     font-weight: bold;
-    color: var(--bronze);
-    opacity: 0.4;
+    color: var(--gold);
+    opacity: 0.5;
   }
 
   .empty p {

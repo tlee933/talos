@@ -79,7 +79,7 @@
 
   /* Markdown styles for assistant messages */
   .assistant .bubble :global(strong) {
-    color: var(--bronze);
+    color: var(--gold);
   }
 
   .assistant .bubble :global(em) {
@@ -106,10 +106,10 @@
   }
 
   .assistant .bubble :global(blockquote) {
-    border-left: 3px solid var(--bronze);
+    border-left: 3px solid var(--gold);
     padding: 4px 10px;
     margin: 6px 0;
-    background: rgba(205, 127, 50, 0.08);
+    background: rgba(212, 165, 74, 0.08);
     color: var(--muted);
   }
 
@@ -119,7 +119,7 @@
   .assistant .bubble :global(h4),
   .assistant .bubble :global(h5),
   .assistant .bubble :global(h6) {
-    color: var(--bronze);
+    color: var(--gold);
     margin: 8px 0 4px;
     line-height: 1.3;
   }
@@ -135,6 +135,7 @@
     background: var(--forge-light);
     padding: 1px 5px;
     border-radius: 3px;
+    border-bottom: 1px solid rgba(212, 165, 74, 0.3);
     font-family: 'JetBrains Mono', 'Fira Code', monospace;
     font-size: 12px;
   }
@@ -190,7 +191,7 @@
 
   .cursor {
     animation: blink 0.8s step-end infinite;
-    color: var(--bronze);
+    color: var(--gold);
     font-weight: bold;
   }
 

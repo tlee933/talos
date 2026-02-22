@@ -116,7 +116,7 @@
   }
 
   .tok-rate.pulse {
-    color: var(--bronze);
+    color: var(--gold);
   }
 
   .icon-btn {
