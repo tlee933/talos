@@ -1,8 +1,17 @@
 <script>
   import SettingsPanel from './SettingsPanel.svelte';
 
-  let { connected = false, config = {}, tokPerSec = null, onConfigChange } = $props();
+  let { connected = false, config = {}, tokPerSec = null, tokUpdatedAt = 0, onConfigChange } = $props();
   let settingsOpen = $state(false);
+  let pulsing = $state(false);
+
+  $effect(() => {
+    if (tokUpdatedAt > 0) {
+      pulsing = true;
+      const timer = setTimeout(() => { pulsing = false; }, 600);
+      return () => clearTimeout(timer);
+    }
+  });
 
   function toggleSettings() {
     settingsOpen = !settingsOpen;
@@ -23,7 +32,7 @@
     {#if connected}
       <span class="model">{config.model || 'unknown'}</span>
       <span class="separator">|</span>
-      <span class="tok-rate">{tokPerSec != null ? `${tokPerSec} tok/s` : '-- tok/s'}</span>
+      <span class="tok-rate" class:pulse={pulsing}>{tokPerSec != null ? `${tokPerSec} tok/s` : '-- tok/s'}</span>
     {:else}
       <span class="model disconnected-text">disconnected</span>
     {/if}
@@ -93,6 +102,11 @@
 
   .tok-rate {
     white-space: nowrap;
+    transition: color 0.3s;
+  }
+
+  .tok-rate.pulse {
+    color: var(--bronze);
   }
 
   .gear-btn {

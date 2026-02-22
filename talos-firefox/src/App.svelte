@@ -12,6 +12,7 @@
   let activeRequestId = $state(null);
   let config = $state({ ...DEFAULT_CONFIG });
   let tokPerSec = $state(null);
+  let tokUpdatedAt = $state(0);
   let healthInterval;
 
   // Page context state
@@ -112,7 +113,10 @@
         if (reqId !== activeRequestId) return;
         streaming = false;
         activeRequestId = null;
-        if (tps != null) tokPerSec = tps;
+        if (tps != null) {
+          tokPerSec = tps;
+          tokUpdatedAt = Date.now();
+        }
       },
       onStreamError(reqId, error) {
         if (reqId !== activeRequestId) return;
@@ -186,7 +190,7 @@
   });
 </script>
 
-<Toolbar {connected} {config} {tokPerSec} onConfigChange={handleConfigChange} />
+<Toolbar {connected} {config} {tokPerSec} {tokUpdatedAt} onConfigChange={handleConfigChange} />
 <MessageList {messages} streamingId={activeRequestId} />
 <InputBar
   onSend={handleSend}

@@ -6,6 +6,9 @@
   let { onSend, disabled = false, context = null, contextMode = null, onDismissContext, messages = [] } = $props();
   let text = $state('');
   let textarea;
+  let history = $state([]);
+  let historyIndex = $state(-1);
+  let savedDraft = $state('');
 
   const BASE_SUGGESTIONS = [
     'Summarize this page',
@@ -76,6 +79,42 @@
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       send();
+      return;
+    }
+    if (e.key === 'ArrowUp' && !e.shiftKey) {
+      // Only navigate history when cursor is at start or input is single-line
+      const atStart = textarea.selectionStart === 0 && textarea.selectionEnd === 0;
+      const singleLine = !text.includes('\n');
+      if (atStart || singleLine) {
+        if (history.length === 0) return;
+        if (historyIndex === -1) {
+          savedDraft = text;
+          historyIndex = history.length - 1;
+        } else if (historyIndex > 0) {
+          historyIndex--;
+        } else {
+          return;
+        }
+        e.preventDefault();
+        text = history[historyIndex];
+      }
+      return;
+    }
+    if (e.key === 'ArrowDown' && !e.shiftKey) {
+      if (historyIndex === -1) return;
+      const atEnd = textarea.selectionStart === text.length;
+      const singleLine = !text.includes('\n');
+      if (atEnd || singleLine) {
+        e.preventDefault();
+        if (historyIndex < history.length - 1) {
+          historyIndex++;
+          text = history[historyIndex];
+        } else {
+          historyIndex = -1;
+          text = savedDraft;
+        }
+      }
+      return;
     }
   }
 
@@ -112,6 +151,12 @@
   function send() {
     const trimmed = text.trim();
     if (!trimmed || disabled) return;
+    // Push to history (avoid duplicating the last entry)
+    if (!history.length || history[history.length - 1] !== trimmed) {
+      history.push(trimmed);
+    }
+    historyIndex = -1;
+    savedDraft = '';
     spawnFlames();
     onSend(trimmed);
     text = '';
