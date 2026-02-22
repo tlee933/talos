@@ -1,7 +1,7 @@
 <script>
   import SettingsPanel from './SettingsPanel.svelte';
 
-  let { connected = false, config = {}, tokPerSec = null, tokUpdatedAt = 0, onConfigChange } = $props();
+  let { connected = false, config = {}, tokPerSec = null, tokUpdatedAt = 0, onConfigChange, onToggleHistory, onNewConversation } = $props();
   let settingsOpen = $state(false);
   let pulsing = $state(false);
 
@@ -36,6 +36,16 @@
     {:else}
       <span class="model disconnected-text">disconnected</span>
     {/if}
+    <button class="icon-btn" onclick={onNewConversation} aria-label="New conversation" title="New conversation">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+      </svg>
+    </button>
+    <button class="icon-btn" onclick={onToggleHistory} aria-label="Conversations" title="Conversation history">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+      </svg>
+    </button>
     <button class="gear-btn" onclick={toggleSettings} aria-label="Settings" class:active={settingsOpen}>
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="3"/>
@@ -107,6 +117,24 @@
 
   .tok-rate.pulse {
     color: var(--bronze);
+  }
+
+  .icon-btn {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  .icon-btn:hover {
+    color: var(--bronze);
+    background: var(--forge-light);
   }
 
   .gear-btn {

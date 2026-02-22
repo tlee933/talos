@@ -32,19 +32,26 @@ export function sanitize(html) {
 }
 
 /**
- * Parse message content into text and code block parts.
+ * Parse message content into text, code block, and think block parts.
  */
 export function parseContent(text) {
   const parts = [];
-  const codeRegex = /```(\w*)\n([\s\S]*?)```/g;
+  // Combined regex: match <think> blocks OR fenced code blocks
+  const combinedRegex = /<think>([\s\S]*?)<\/think>|```(\w*)\n([\s\S]*?)```/g;
   let last = 0;
   let match;
 
-  while ((match = codeRegex.exec(text)) !== null) {
+  while ((match = combinedRegex.exec(text)) !== null) {
     if (match.index > last) {
       parts.push({ type: 'text', value: text.slice(last, match.index) });
     }
-    parts.push({ type: 'code', language: match[1], value: match[2] });
+    if (match[1] !== undefined) {
+      // <think> block
+      parts.push({ type: 'think', value: match[1].trim() });
+    } else {
+      // Code block
+      parts.push({ type: 'code', language: match[2], value: match[3] });
+    }
     last = match.index + match[0].length;
   }
 

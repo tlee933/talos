@@ -1,10 +1,15 @@
 <script>
   import { onMount } from 'svelte';
-  import { connect, setCallbacks, sendChat, sendWebFetch, sendWebSearch, checkHealth, getConfig, updateConfig, disconnect } from './api.js';
+  import {
+    connect, setCallbacks, sendChat, sendWebFetch, sendWebSearch,
+    checkHealth, getConfig, updateConfig, disconnect,
+    saveConversation, listConversations, loadConversation, deleteConversation,
+  } from './api.js';
   import { DEFAULT_CONFIG } from './providers.js';
   import Toolbar from './components/Toolbar.svelte';
   import MessageList from './components/MessageList.svelte';
   import InputBar from './components/InputBar.svelte';
+  import ConversationPanel from './components/ConversationPanel.svelte';
 
   let messages = $state([]);
   let connected = $state(false);
@@ -19,12 +24,85 @@
   let pageContext = $state(null);
   let contextMode = $state(null);
 
+  // Conversation persistence state
+  let conversationId = $state(null);
+  let historyPanelOpen = $state(false);
+  let conversations = $state([]);
+  let saveTimer = null;
+
   function clearContext() {
     pageContext = null;
     contextMode = null;
   }
 
+  function generateId() {
+    return crypto.randomUUID().slice(0, 8);
+  }
+
+  function pruneHistory() {
+    // Keep first + last 6 messages, drop middle when over 90K chars
+    const totalChars = messages.reduce((sum, m) => sum + (m.content || '').length, 0);
+    if (totalChars < 90000 || messages.length <= 7) return;
+
+    const first = messages.slice(0, 1);
+    const recent = messages.slice(-6);
+    messages = [...first, { role: 'system', content: '[earlier messages pruned]' }, ...recent];
+  }
+
+  function debouncedSave() {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      if (conversationId && messages.length > 0) {
+        saveConversation(conversationId, '', messages);
+      }
+    }, 2000);
+  }
+
+  function startNewConversation() {
+    messages = [];
+    conversationId = generateId();
+    historyPanelOpen = false;
+  }
+
   function handleSend(text) {
+    // Handle /help command
+    if (text.trim() === '/help') {
+      messages.push({
+        role: 'assistant',
+        content:
+          '**Talos Commands**\n\n' +
+          '`/web <url>` — fetch a page and display its content\n' +
+          '`/search <query>` — search DuckDuckGo\n' +
+          '`/reason <query>` — ask with step-by-step reasoning\n' +
+          '`/new` — start a fresh conversation\n' +
+          '`/help` — show this help\n\n' +
+          '**Keyboard Shortcuts**\n\n' +
+          '`Ctrl+Shift+Y` — toggle sidebar\n' +
+          '`Ctrl+Shift+S` — send selected text\n' +
+          '`Ctrl+Shift+P` — send page content\n' +
+          '`Tab` — accept ghost suggestion\n' +
+          '`Shift+Enter` — newline\n' +
+          '`↑ / ↓` — input history\n\n' +
+          '**Context Menu**\n\n' +
+          'Right-click any page for *Send Selection*, *Send Page*, or *Summarize Page*.',
+      });
+      return;
+    }
+
+    // Handle /new command
+    if (text.trim() === '/new') {
+      startNewConversation();
+      return;
+    }
+
+    // Handle /reason command — inject step-by-step thinking prompt
+    let reasonMode = false;
+    if (text.startsWith('/reason ')) {
+      text = text.slice(8).trim();
+      reasonMode = true;
+      if (!text) return;
+    }
+
     // Handle /web command
     if (text.startsWith('/web ')) {
       const url = text.slice(5).trim();
@@ -47,6 +125,11 @@
       const reqId = sendWebSearch(query);
       activeRequestId = reqId;
       return;
+    }
+
+    // Generate conversation ID on first message
+    if (!conversationId) {
+      conversationId = generateId();
     }
 
     let userContent = text;
@@ -74,7 +157,15 @@
       clearContext();
     }
 
+    // Append reasoning prompt when in reason mode
+    if (reasonMode) {
+      userContent += '\n\nWhen solving this, think step by step. Show your reasoning process inside <think>...</think> tags before giving your final answer.';
+    }
+
     messages.push({ role: 'user', content: userContent });
+
+    // Prune if needed before sending
+    pruneHistory();
 
     // Snapshot history including the new user message (exclude empty assistant placeholder)
     const history = messages
@@ -97,6 +188,23 @@
     checkHealth();
   }
 
+  function handleLoadConversation(conv) {
+    loadConversation(conv.id);
+    historyPanelOpen = false;
+  }
+
+  function handleDeleteConversation(conv) {
+    deleteConversation(conv.id);
+    conversations = conversations.filter((c) => c.id !== conv.id);
+  }
+
+  function toggleHistoryPanel() {
+    historyPanelOpen = !historyPanelOpen;
+    if (historyPanelOpen) {
+      listConversations();
+    }
+  }
+
   onMount(() => {
     setCallbacks({
       onStreamStart(reqId) {
@@ -117,6 +225,8 @@
           tokPerSec = tps;
           tokUpdatedAt = Date.now();
         }
+        // Auto-save after each response
+        debouncedSave();
       },
       onStreamError(reqId, error) {
         if (reqId !== activeRequestId) return;
@@ -176,6 +286,21 @@
           }
         }
       },
+      onConvSaved(result) {
+        // Auto-save acknowledged — no UI feedback needed
+      },
+      onConvListResult(convs) {
+        conversations = convs || [];
+      },
+      onConvLoaded(result) {
+        if (result.success) {
+          conversationId = result.id;
+          messages = result.messages || [];
+        }
+      },
+      onConvDeleted(result) {
+        // Already removed from local state in handleDeleteConversation
+      },
     });
 
     connect();
@@ -183,14 +308,36 @@
     checkHealth();
     healthInterval = setInterval(checkHealth, 30000);
 
+    // Load most recent conversation on mount
+    listConversations();
+
     return () => {
       clearInterval(healthInterval);
+      if (saveTimer) clearTimeout(saveTimer);
       disconnect();
     };
   });
 </script>
 
-<Toolbar {connected} {config} {tokPerSec} {tokUpdatedAt} onConfigChange={handleConfigChange} />
+<Toolbar
+  {connected}
+  {config}
+  {tokPerSec}
+  {tokUpdatedAt}
+  onConfigChange={handleConfigChange}
+  onToggleHistory={toggleHistoryPanel}
+  onNewConversation={startNewConversation}
+/>
+
+{#if historyPanelOpen}
+  <ConversationPanel
+    {conversations}
+    onLoad={handleLoadConversation}
+    onDelete={handleDeleteConversation}
+    onClose={() => { historyPanelOpen = false; }}
+  />
+{/if}
+
 <MessageList {messages} streamingId={activeRequestId} />
 <InputBar
   onSend={handleSend}

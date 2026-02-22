@@ -9,6 +9,10 @@ let callbacks = {
   onContextReceived: null,
   onWebFetchResult: null,
   onWebSearchResult: null,
+  onConvSaved: null,
+  onConvListResult: null,
+  onConvLoaded: null,
+  onConvDeleted: null,
 };
 
 export function setCallbacks(cbs) {
@@ -46,6 +50,18 @@ export function connect() {
         break;
       case 'WEB_SEARCH_RESULT':
         callbacks.onWebSearchResult?.(msg.requestId, msg.data);
+        break;
+      case 'CONV_SAVED':
+        callbacks.onConvSaved?.(msg);
+        break;
+      case 'CONV_LIST_RESULT':
+        callbacks.onConvListResult?.(msg.conversations);
+        break;
+      case 'CONV_LOADED':
+        callbacks.onConvLoaded?.(msg);
+        break;
+      case 'CONV_DELETED':
+        callbacks.onConvDeleted?.(msg);
         break;
     }
   });
@@ -99,6 +115,32 @@ export function sendWebSearch(query) {
   const requestId = crypto.randomUUID();
   port.postMessage({ type: 'WEB_SEARCH', requestId, query });
   return requestId;
+}
+
+// --- Conversation persistence ---
+
+export function saveConversation(id, title, messages) {
+  if (!port) connect();
+  if (!port) return;
+  port.postMessage({ type: 'CONV_SAVE', id, title, messages });
+}
+
+export function listConversations() {
+  if (!port) connect();
+  if (!port) return;
+  port.postMessage({ type: 'CONV_LIST' });
+}
+
+export function loadConversation(id) {
+  if (!port) connect();
+  if (!port) return;
+  port.postMessage({ type: 'CONV_LOAD', id });
+}
+
+export function deleteConversation(id) {
+  if (!port) connect();
+  if (!port) return;
+  port.postMessage({ type: 'CONV_DELETE', id });
 }
 
 export function disconnect() {

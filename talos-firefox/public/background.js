@@ -132,6 +132,93 @@ browser.browserAction.onClicked.addListener(() => {
   browser.sidebarAction.toggle();
 });
 
+// --- Conversation Storage ---
+const MAX_CONVERSATIONS = 50;
+const MAX_MESSAGES_PER_CONV = 200;
+const MAX_MSG_CHARS = 2000;
+
+function autoTitle(messages) {
+  const first = messages.find((m) => m.role === 'user');
+  if (!first) return 'Untitled';
+  const text = first.content.slice(0, 80).trim();
+  return text.length < first.content.length ? text + '...' : text;
+}
+
+async function saveConversation(id, title, messages) {
+  try {
+    const result = await browser.storage.local.get('talos-conversations');
+    const convs = result['talos-conversations'] || {};
+
+    // Truncate messages
+    const trimmed = messages.slice(-MAX_MESSAGES_PER_CONV).map((m) => ({
+      role: m.role,
+      content: (m.content || '').slice(0, MAX_MSG_CHARS),
+    }));
+
+    convs[id] = {
+      title: title || autoTitle(messages),
+      messages: trimmed,
+      messageCount: trimmed.length,
+      updatedAt: Date.now(),
+    };
+
+    // Cap total conversations
+    const ids = Object.keys(convs);
+    if (ids.length > MAX_CONVERSATIONS) {
+      ids.sort((a, b) => (convs[a].updatedAt || 0) - (convs[b].updatedAt || 0));
+      for (let i = 0; i < ids.length - MAX_CONVERSATIONS; i++) {
+        delete convs[ids[i]];
+      }
+    }
+
+    await browser.storage.local.set({ 'talos-conversations': convs });
+    return { success: true, id, title: convs[id].title };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+async function loadConversations() {
+  try {
+    const result = await browser.storage.local.get('talos-conversations');
+    const convs = result['talos-conversations'] || {};
+    return Object.entries(convs)
+      .map(([id, data]) => ({
+        id,
+        title: data.title || 'Untitled',
+        messageCount: data.messageCount || 0,
+        updatedAt: data.updatedAt || 0,
+      }))
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+  } catch {
+    return [];
+  }
+}
+
+async function loadConversation(id) {
+  try {
+    const result = await browser.storage.local.get('talos-conversations');
+    const convs = result['talos-conversations'] || {};
+    const conv = convs[id];
+    if (!conv) return { success: false, error: 'Not found' };
+    return { success: true, id, title: conv.title, messages: conv.messages || [] };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+async function deleteConversation(id) {
+  try {
+    const result = await browser.storage.local.get('talos-conversations');
+    const convs = result['talos-conversations'] || {};
+    delete convs[id];
+    await browser.storage.local.set({ 'talos-conversations': convs });
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
 // Load config on startup
 loadConfig();
 
@@ -147,6 +234,10 @@ browser.runtime.onConnect.addListener((port) => {
     else if (msg.type === 'CONFIG_UPDATE') handleConfigUpdate(port, msg);
     else if (msg.type === 'WEB_FETCH') handleWebFetch(port, msg);
     else if (msg.type === 'WEB_SEARCH') handleWebSearch(port, msg);
+    else if (msg.type === 'CONV_SAVE') handleConvSave(port, msg);
+    else if (msg.type === 'CONV_LIST') handleConvList(port);
+    else if (msg.type === 'CONV_LOAD') handleConvLoad(port, msg);
+    else if (msg.type === 'CONV_DELETE') handleConvDelete(port, msg);
   });
 
   port.onDisconnect.addListener(() => {
@@ -221,6 +312,26 @@ async function handleWebSearch(port, msg) {
   }
 }
 
+async function handleConvSave(port, msg) {
+  const result = await saveConversation(msg.id, msg.title, msg.messages || []);
+  port.postMessage({ type: 'CONV_SAVED', ...result });
+}
+
+async function handleConvList(port) {
+  const conversations = await loadConversations();
+  port.postMessage({ type: 'CONV_LIST_RESULT', conversations });
+}
+
+async function handleConvLoad(port, msg) {
+  const result = await loadConversation(msg.id);
+  port.postMessage({ type: 'CONV_LOADED', ...result });
+}
+
+async function handleConvDelete(port, msg) {
+  const result = await deleteConversation(msg.id);
+  port.postMessage({ type: 'CONV_DELETED', id: msg.id, ...result });
+}
+
 async function handleChat(port, msg) {
   const { requestId, history } = msg;
 
@@ -258,6 +369,7 @@ async function handleChat(port, msg) {
     let tokenCount = 0;
     let fullResponse = '';
     const streamStart = Date.now();
+    let inReasoning = false;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -272,12 +384,42 @@ async function handleChat(port, msg) {
         if (!trimmed || !trimmed.startsWith('data:')) continue;
 
         const data = trimmed.slice(5).trim();
-        if (data === '[DONE]') continue;
+        if (data === '[DONE]') {
+          // Close any open think block
+          if (inReasoning) {
+            const closeTag = '</think>\n';
+            fullResponse += closeTag;
+            port.postMessage({ type: 'STREAM_TOKEN', requestId, token: closeTag });
+            inReasoning = false;
+          }
+          continue;
+        }
 
         try {
           const parsed = JSON.parse(data);
-          const token = parsed.choices?.[0]?.delta?.content;
-          if (token) {
+          const delta = parsed.choices?.[0]?.delta;
+          const reasoning = delta?.reasoning_content;
+          const content = delta?.content;
+
+          // Handle reasoning_content (llama-server native thinking)
+          if (reasoning) {
+            let token = reasoning;
+            if (!inReasoning) {
+              inReasoning = true;
+              token = '<think>' + reasoning;
+            }
+            tokenCount++;
+            fullResponse += token;
+            port.postMessage({ type: 'STREAM_TOKEN', requestId, token });
+          }
+
+          // Handle regular content
+          if (content) {
+            let token = content;
+            if (inReasoning) {
+              inReasoning = false;
+              token = '</think>\n' + content;
+            }
             tokenCount++;
             fullResponse += token;
             port.postMessage({ type: 'STREAM_TOKEN', requestId, token });

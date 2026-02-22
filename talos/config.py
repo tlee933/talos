@@ -10,6 +10,8 @@ class Config:
     obsidian_vault: str = ""
     confirm_commands: str = "always"  # always | smart | never
     context_injection: bool = True
+    tool_use: bool = True
+    auto_save: bool = True
     enabled_tools: list[str] = field(
         default_factory=lambda: ["shell", "notify", "clipboard", "files", "obsidian"]
     )

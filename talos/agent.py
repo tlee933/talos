@@ -1,6 +1,7 @@
 import json
 import re
 import time
+import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 
@@ -45,6 +46,8 @@ class ParsedResponse:
     segments: list  # list of (str, CodeBlock | None) tuples
     raw: str
     error: str = ""  # non-empty if this is an error sentinel
+    tool_calls: list = field(default_factory=list)  # list[ToolCall]
+    think_blocks: list = field(default_factory=list)  # list[str]
 
 
 _CODE_BLOCK_RE = re.compile(
@@ -52,15 +55,51 @@ _CODE_BLOCK_RE = re.compile(
     re.DOTALL,
 )
 
+_THINK_RE = re.compile(
+    r"<think>(.*?)</think>",
+    re.DOTALL,
+)
+
+REASON_SUFFIX = """
+
+When solving this, think step by step. Show your reasoning process inside <think>...</think> tags before giving your final answer.
+
+Example:
+<think>
+Let me break this down...
+1. First, I need to understand...
+2. Then I should check...
+</think>
+
+Here's what I found: ..."""
+
 
 def parse_response(text: str) -> ParsedResponse:
-    """Parse LLM output into alternating reasoning text and code blocks."""
+    """Parse LLM output into alternating reasoning text and code blocks.
+
+    Also extracts tool_calls from <tool_call> XML tags and
+    <think>...</think> reasoning blocks.
+    """
+    from talos.tools import parse_tool_calls, extract_reasoning
+
+    # Extract tool calls first
+    tool_calls = parse_tool_calls(text)
+
+    # Strip tool_call tags for code block parsing
+    clean_text = extract_reasoning(text) if tool_calls else text
+
+    # Extract think blocks
+    think_blocks = [m.group(1).strip() for m in _THINK_RE.finditer(clean_text)]
+
+    # Strip think tags from text for segment parsing
+    segment_text = _THINK_RE.sub("", clean_text).strip() if think_blocks else clean_text
+
     segments = []
     last_end = 0
 
-    for m in _CODE_BLOCK_RE.finditer(text):
+    for m in _CODE_BLOCK_RE.finditer(segment_text):
         # Reasoning text before this code block
-        before = text[last_end:m.start()].strip()
+        before = segment_text[last_end:m.start()].strip()
         lang = m.group(1) or "bash"
         code = m.group(2).strip()
         if before:
@@ -70,15 +109,18 @@ def parse_response(text: str) -> ParsedResponse:
         last_end = m.end()
 
     # Trailing reasoning after the last code block
-    trailing = text[last_end:].strip()
+    trailing = segment_text[last_end:].strip()
     if trailing:
         segments.append((trailing, None))
 
     # If no segments at all, treat the whole thing as reasoning
     if not segments:
-        segments.append((text.strip(), None))
+        segments.append((segment_text.strip(), None))
 
-    return ParsedResponse(segments=segments, raw=text)
+    return ParsedResponse(
+        segments=segments, raw=text,
+        tool_calls=tool_calls, think_blocks=think_blocks,
+    )
 
 
 def _error_response(msg: str) -> ParsedResponse:
@@ -93,28 +135,54 @@ class Agent:
     def __init__(self, base_url: str):
         self.http = httpx.AsyncClient(base_url=base_url, timeout=120.0)
         self.history: list[Turn] = []
-        self.max_history = 20  # keep last N turns to fit context
+        self.max_history = 40
+        self.conversation_id: str = str(uuid.uuid4())[:8]
 
-    def _messages(self, system: str | None = None, context: str | None = None) -> list[dict]:
+    def _messages(
+        self,
+        system: str | None = None,
+        context: str | None = None,
+        tool_prompt: str | None = None,
+    ) -> list[dict]:
         sys_text = system or SYSTEM_PROMPT
+        if tool_prompt:
+            sys_text = f"{sys_text}{tool_prompt}"
         if context:
             sys_text = f"{sys_text}\n\n{context}"
+
         msgs = [{"role": "system", "content": sys_text}]
-        # Trim to max_history (keep most recent)
+
+        # Smart pruning: check budget and prune if needed
+        from talos.context_manager import calculate_budget, smart_prune, MAX_CONTEXT_TOKENS, RESERVED_TOKENS
+
         history = self.history[-self.max_history:]
+        budget = calculate_budget(sys_text, history)
+        if budget.needs_pruning:
+            target = MAX_CONTEXT_TOKENS - RESERVED_TOKENS - budget.system_tokens
+            history = smart_prune(history, target)
+
         for turn in history:
             msgs.append({"role": turn.role, "content": turn.content})
         return msgs
 
-    def _payload(self, system: str | None = None, stream: bool = False, context: str | None = None) -> dict:
+    def _payload(
+        self,
+        system: str | None = None,
+        stream: bool = False,
+        context: str | None = None,
+        tools: list[dict] | None = None,
+        tool_prompt: str | None = None,
+    ) -> dict:
         payload = {
             "model": "hivecoder-7b",
-            "messages": self._messages(system, context=context),
+            "messages": self._messages(system, context=context, tool_prompt=tool_prompt),
             "temperature": 0.7,
             "max_tokens": 1024,
         }
         if stream:
             payload["stream"] = True
+        if tools:
+            payload["tools"] = tools
         return payload
 
     # --- Non-streaming (fallback) ---
@@ -154,23 +222,31 @@ class Agent:
 
     # --- Streaming ---
 
-    async def stream_chat(self, message: str, system: str | None = None, context: str | None = None) -> AsyncIterator[str]:
+    async def stream_chat(
+        self,
+        message: str,
+        system: str | None = None,
+        context: str | None = None,
+        tools: list[dict] | None = None,
+        tool_prompt: str | None = None,
+    ) -> AsyncIterator[str]:
         """Stream a chat response, yielding delta content strings.
 
         Accumulates the full response and appends to history when done.
         """
         self.history.append(Turn(role="user", content=message))
         accumulated = []
+        sse_state = _SSEState()
 
         try:
             async with self.http.stream(
                 "POST",
                 "/v1/chat/completions",
-                json=self._payload(system, stream=True, context=context),
+                json=self._payload(system, stream=True, context=context, tools=tools, tool_prompt=tool_prompt),
             ) as resp:
                 resp.raise_for_status()
                 async for line in resp.aiter_lines():
-                    chunk = _parse_sse_line(line)
+                    chunk = _parse_sse_line(line, sse_state)
                     if chunk is None:
                         continue
                     if chunk == "":
@@ -194,6 +270,7 @@ class Agent:
         output_msg = f"Command: `{command}`\nOutput:\n```\n{result}\n```"
         self.history.append(Turn(role="user", content=output_msg))
         accumulated = []
+        sse_state = _SSEState()
 
         try:
             async with self.http.stream(
@@ -203,7 +280,45 @@ class Agent:
             ) as resp:
                 resp.raise_for_status()
                 async for line in resp.aiter_lines():
-                    chunk = _parse_sse_line(line)
+                    chunk = _parse_sse_line(line, sse_state)
+                    if chunk is None:
+                        continue
+                    if chunk == "":
+                        break
+                    accumulated.append(chunk)
+                    yield chunk
+        except _CONNECT_ERRORS as exc:
+            error_msg = f"\n[hivemind unreachable: {exc}]"
+            accumulated.append(error_msg)
+            yield error_msg
+
+        full_text = "".join(accumulated)
+        if full_text:
+            self.history.append(Turn(role="assistant", content=full_text))
+
+    async def stream_feed_tool_result(
+        self,
+        tool_name: str,
+        result_str: str,
+        system: str | None = None,
+        context: str | None = None,
+        tool_prompt: str | None = None,
+    ) -> AsyncIterator[str]:
+        """Stream LLM analysis of a tool call result."""
+        output_msg = f"Tool `{tool_name}` returned:\n```\n{result_str}\n```"
+        self.history.append(Turn(role="user", content=output_msg))
+        accumulated = []
+        sse_state = _SSEState()
+
+        try:
+            async with self.http.stream(
+                "POST",
+                "/v1/chat/completions",
+                json=self._payload(system, stream=True, context=context, tool_prompt=tool_prompt),
+            ) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    chunk = _parse_sse_line(line, sse_state)
                     if chunk is None:
                         continue
                     if chunk == "":
@@ -330,6 +445,70 @@ class Agent:
         except _CONNECT_ERRORS as exc:
             return {"error": str(exc)}
 
+    # --- Conversation persistence ---
+
+    async def conversation_save(self, title: str = "", conversation_id: str | None = None) -> dict:
+        """Save the current conversation to Hive-Mind."""
+        conv_id = conversation_id or self.conversation_id
+        messages = [{"role": t.role, "content": t.content} for t in self.history]
+        try:
+            resp = await self.http.post(
+                "/conversation/save",
+                json={
+                    "conversation_id": conv_id,
+                    "title": title,
+                    "messages": messages,
+                    "source": "tui",
+                },
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except _CONNECT_ERRORS as exc:
+            return {"error": str(exc)}
+
+    async def conversation_load(self, conversation_id: str) -> dict:
+        """Load a saved conversation and restore history."""
+        try:
+            resp = await self.http.post(
+                "/conversation/load",
+                json={"conversation_id": conversation_id},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            if data.get("success") and data.get("messages"):
+                self.history = [
+                    Turn(role=m["role"], content=m["content"])
+                    for m in data["messages"]
+                ]
+                self.conversation_id = conversation_id
+            return data
+        except _CONNECT_ERRORS as exc:
+            return {"error": str(exc)}
+
+    async def conversation_list_saved(self, limit: int = 20) -> dict:
+        """List saved conversations."""
+        try:
+            resp = await self.http.post(
+                "/conversation/list",
+                json={"limit": limit},
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except _CONNECT_ERRORS as exc:
+            return {"error": str(exc)}
+
+    async def conversation_export(self, conversation_id: str, fmt: str = "markdown") -> dict:
+        """Export a conversation as markdown or JSON."""
+        try:
+            resp = await self.http.post(
+                "/conversation/export",
+                json={"conversation_id": conversation_id, "format": fmt},
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except _CONNECT_ERRORS as exc:
+            return {"error": str(exc)}
+
     # --- Connection health ---
 
     @property
@@ -344,6 +523,7 @@ class Agent:
     def reset(self):
         """Clear conversation history."""
         self.history.clear()
+        self.conversation_id = str(uuid.uuid4())[:8]
 
     async def health(self) -> dict:
         try:
@@ -386,13 +566,23 @@ class Agent:
         await self.http.aclose()
 
 
-def _parse_sse_line(line: str) -> str | None:
+class _SSEState:
+    """Track reasoning state across SSE chunks."""
+
+    def __init__(self):
+        self.in_reasoning = False
+
+
+def _parse_sse_line(line: str, state: _SSEState | None = None) -> str | None:
     """Parse a single SSE line from llama-server.
 
     Returns:
         - content string (may be empty for keep-alive)
         - "" (empty string) on stream end ([DONE] or finish_reason: stop)
         - None for non-data lines (comments, blank lines)
+
+    When *state* is provided, reasoning_content deltas are wrapped in
+    <think>...</think> tags automatically.
     """
     line = line.strip()
     if not line or line.startswith(":"):
@@ -403,6 +593,10 @@ def _parse_sse_line(line: str) -> str | None:
     payload = line[6:]  # strip "data: "
 
     if payload.strip() == "[DONE]":
+        # Close any open think block
+        if state and state.in_reasoning:
+            state.in_reasoning = False
+            return "</think>\n"
         return ""
 
     try:
@@ -418,7 +612,27 @@ def _parse_sse_line(line: str) -> str | None:
 
     # Check finish_reason
     if choice.get("finish_reason") in ("stop", "length"):
+        # Close any open think block before ending
+        if state and state.in_reasoning:
+            state.in_reasoning = False
+            return "</think>\n"
         return ""
 
     delta = choice.get("delta", {})
-    return delta.get("content", "")
+
+    # Handle reasoning_content (llama-server native thinking)
+    reasoning = delta.get("reasoning_content")
+    if reasoning and state is not None:
+        if not state.in_reasoning:
+            state.in_reasoning = True
+            return "<think>" + reasoning
+        return reasoning
+
+    content = delta.get("content", "")
+
+    # Transition from reasoning to content
+    if content and state and state.in_reasoning:
+        state.in_reasoning = False
+        return "</think>\n" + content
+
+    return content

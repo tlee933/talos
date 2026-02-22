@@ -33,6 +33,34 @@ describe('parseContent', () => {
     const parts = parseContent('');
     expect(parts).toEqual([{ type: 'text', value: '' }]);
   });
+
+  it('extracts a think block', () => {
+    const input = '<think>Let me analyze this.</think>\nThe answer is 42.';
+    const parts = parseContent(input);
+    expect(parts).toHaveLength(2);
+    expect(parts[0].type).toBe('think');
+    expect(parts[0].value).toBe('Let me analyze this.');
+    expect(parts[1].type).toBe('text');
+    expect(parts[1].value).toContain('The answer is 42');
+  });
+
+  it('handles think blocks with code blocks', () => {
+    const input = '<think>Need to check files.</think>\n```bash\nls\n```';
+    const parts = parseContent(input);
+    expect(parts).toHaveLength(3);
+    expect(parts[0].type).toBe('think');
+    expect(parts[1].type).toBe('text');
+    expect(parts[2].type).toBe('code');
+  });
+
+  it('handles multiple think blocks', () => {
+    const input = '<think>First.</think>\nText\n<think>Second.</think>';
+    const parts = parseContent(input);
+    const thinks = parts.filter((p) => p.type === 'think');
+    expect(thinks).toHaveLength(2);
+    expect(thinks[0].value).toBe('First.');
+    expect(thinks[1].value).toBe('Second.');
+  });
 });
 
 describe('sanitize', () => {

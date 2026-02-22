@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "talos"
-version = "0.6.2"
+version = "0.7.0"
 description = "Local desktop AI for Linux + KDE Plasma"
 readme = "README.md"
 license = "MIT"

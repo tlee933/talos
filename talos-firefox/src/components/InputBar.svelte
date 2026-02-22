@@ -28,6 +28,9 @@
     'What is the difference between ',
     '/search ',
     '/web ',
+    '/reason ',
+    '/new',
+    '/help',
   ];
 
   // Build context-aware follow-up suggestions from last assistant response

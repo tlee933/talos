@@ -13,6 +13,11 @@
     {#each parts as part}
       {#if part.type === 'code'}
         <CodeBlock code={part.value} language={part.language} />
+      {:else if part.type === 'think'}
+        <details class="think-block" open>
+          <summary>thinking</summary>
+          <div class="think-content">{part.value}</div>
+        </details>
       {:else if role === 'assistant'}
         <span class="markdown">{@html sanitize(snarkdown(part.value))}</span>
       {:else}
@@ -151,6 +156,36 @@
   .assistant .bubble :global(del) {
     text-decoration: line-through;
     opacity: 0.7;
+  }
+
+  .think-block {
+    margin: 6px 0;
+    border: 1px solid rgba(255, 191, 0, 0.3);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .think-block summary {
+    padding: 4px 10px;
+    background: rgba(255, 191, 0, 0.08);
+    color: var(--amber);
+    font-size: 12px;
+    font-style: italic;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .think-block summary:hover {
+    background: rgba(255, 191, 0, 0.15);
+  }
+
+  .think-content {
+    padding: 8px 10px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--muted);
+    font-style: italic;
+    white-space: pre-wrap;
   }
 
   .cursor {
