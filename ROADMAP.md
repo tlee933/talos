@@ -1,6 +1,6 @@
 # Talos Roadmap
 
-Current: **v0.6.2** — conversation bridge, web scraper, sidebar search
+Current: **v0.7.0** — tool-use, reasoning, conversation persistence, 88 tok/s
 
 ---
 
@@ -69,21 +69,35 @@ Current: **v0.6.2** — conversation bridge, web scraper, sidebar search
 
 ---
 
-## Phase 5: Smarter Agent (v0.7)
+## ~~Phase 5: Smarter Agent (v0.7.0)~~ ✓
 
 ### Tool use
-- [ ] Model calls tools directly (function calling) instead of proposing shell commands
-- [ ] Built-in tools: file read/write, web fetch, fact store, clipboard, notify
-- [ ] Tool results feed back into reasoning loop automatically
+- [x] Model calls tools directly via `<tool_call>` XML (10 built-in tools)
+- [x] Built-in tools: shell, file read/write/list, clipboard, notify, web fetch, fact store/get
+- [x] Tool results feed back into reasoning loop automatically
+- [x] OpenAI-compatible `tools` array passthrough to llama-server
+
+### Reasoning
+- [x] `reason` command (TUI) and `/reason` (sidebar) trigger `<think>` block chain-of-thought
+- [x] Native `reasoning_content` SSE field support — llama-server streams thinking separately
+- [x] Collapsible amber panels in sidebar, Rich Panels in TUI
+- [x] HiveCoder-7B hitting **88 tok/s** on R9700 XT with ROCm 7.12
 
 ### Conversation persistence
-- [ ] Sidebar chat history saved to `browser.storage.local`, restored on reopen
-- [ ] TUI session browser — list/resume past conversations
-- [ ] Conversation export (markdown, JSON)
+- [x] Sidebar auto-saves to `browser.storage.local`, restored on reopen
+- [x] ConversationPanel with history browser (clock icon in toolbar)
+- [x] TUI: `save`/`load`/`sessions`/`export` commands via Hive-Mind Redis (28-day TTL)
+- [x] `/new` and `/help` sidebar commands
 
 ### Context window management
-- [ ] Automatic summarization of long conversations before context overflow
-- [ ] Smart context pruning — keep system prompt, recent turns, and tool results
+- [x] Token budgeting with char-based estimation (32K context)
+- [x] Smart pruning — keep first turn + last 6, drop middle oldest-first
+- [x] LLM-based summarization fallback for long histories
+
+### Auto-rating
+- [x] Exit code → automatic `▲ positive` / `▼ negative` learning signal
+- [x] Manual `+`/`-` override still available
+- [x] 116 Python tests, 26 JS tests, 0 lint errors
 
 ---
 
@@ -145,4 +159,4 @@ Current: **v0.6.2** — conversation bridge, web scraper, sidebar search
 
 ---
 
-*Last updated: 2026-02-21*
+*Last updated: 2026-02-22*

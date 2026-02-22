@@ -8,10 +8,10 @@ guardian that runs on your own hardware.
 ```
 ╭────────────────────────────╮  ╭─ system ──────────────────────────────────────────╮
 │                            │  │  hivemind    connected http://localhost:8090      │
-│  ╔╦╗╔═╗╦  ╔═╗╔═╗           │  │  model       HiveCoder-7B 61.3 tok/s online       │
+│  ╔╦╗╔═╗╦  ╔═╗╔═╗           │  │  model       HiveCoder-7B 88 tok/s online          │
 │   ║ ╠═╣║  ║ ║╚═╗           │  │  rag         ━━━━━━━━━━━━╌╌╌╌ 75% 73 queries      │
-│   ╩ ╩ ╩╩═╝╚═╝╚═╝           │  │  learning    ━━━━━━━━━━╌╌╌╌╌╌ 64% 32/50 samples   │
-│   v0.6.2 — the bronze       │  │              ~3.7d to next train · v0.9.1         │
+│   ╩ ╩ ╩╩═╝╚═╝╚═╝           │  │  learning    ━━━━━━━━━━━━╌╌╌╌ 76% 38/50 samples   │
+│   v0.7.0 — the bronze       │  │              ~1.8d to next train · v0.9.1         │
 │ guardian                   │  │  gpu         ━━━━━━━━╌╌╌╌ 67% vram 59°C · 100%    │
 ╰────────────────────────────╯  │  redis       cluster 4.26M · 99 sessions          │
                                 │  vault       found ~/Documents/Vault              │
@@ -30,8 +30,13 @@ guardian that runs on your own hardware.
   injects clipboard into your query
 - **Persistent memory** — `remember`/`recall`/`facts` commands store knowledge
   in Hive-Mind across sessions; context saved on exit, restored on startup
+- **Tool-use via function calling** — 10 built-in tools (shell, file I/O,
+  clipboard, notifications, web fetch, facts) invoked natively by the LLM
+  via `<tool_call>` XML tags, with results fed back into the reasoning loop
+- **Step-by-step reasoning** — `reason` command triggers `<think>` block
+  chain-of-thought, rendered as collapsible amber panels (TUI + sidebar)
 - **Learning feedback** — interactions auto-logged to the learning pipeline;
-  inline `+`/`-` rating after command execution enriches training signal
+  auto-rated from exit codes with manual `+`/`-` override
 - **RAG gap analysis** — `suggest` command shows hit rate, missed queries,
   and recommends facts to add for better retrieval
 - **Dangerous command detection** — destructive commands flagged with warnings
@@ -50,6 +55,10 @@ guardian that runs on your own hardware.
   `bridge` command to view cross-client conversations
 - **Web scraper** — `web <url>` fetches and injects page content; `search <query>`
   queries DuckDuckGo for results
+- **Conversation persistence** — `save`/`load`/`sessions`/`export` commands in TUI;
+  sidebar auto-saves to local storage with conversation history panel
+- **Context window management** — smart pruning keeps first + recent turns,
+  drops middle when approaching the 32K token limit
 
 ## Interactive mode
 
@@ -79,10 +88,11 @@ Confirmation options during execution:
 - **n** — skip
 - **a** — auto-run all remaining steps
 
-After execution, rate the response:
-- **+** — positive feedback (feeds learning pipeline)
-- **-** — negative feedback
-- **enter** — skip rating
+After execution, the response is auto-rated based on exit codes:
+- **▲** — auto-rated positive (all commands succeeded)
+- **▼** — auto-rated negative (any command failed)
+- **+/-** — manual override if the auto-rating was wrong
+- **enter** — accept and continue
 
 ## Stack
 
@@ -117,8 +127,13 @@ talos vault daily            # open/create today's daily note
 | `facts`            | List all stored facts                |
 | `suggest`          | RAG gap analysis & suggested facts   |
 | `bridge [N]`       | View shared conversation history     |
+| `reason <query>`   | Ask with step-by-step reasoning      |
 | `web <url>`        | Fetch URL and inject as context      |
 | `search <query>`   | Search DuckDuckGo for results        |
+| `save`             | Save current conversation            |
+| `sessions`         | List saved conversations             |
+| `load <id>`        | Resume a saved conversation          |
+| `export <id>`      | Export conversation (json or md)     |
 | `!cmd`             | Run a shell command directly         |
 | `stats`            | Toggle the system stats panel        |
 | `reset`            | Clear conversation history           |
@@ -150,22 +165,25 @@ context_injection: true    # inject cwd, git branch into LLM context
 ```
 talos CLI/TUI
     |
-    +-- tui.py ------- agentic REPL, commands, learning feedback, session lifecycle
-    +-- agent.py ----- Hive-Mind HTTP API (chat, facts, memory, learning, streaming)
-    +-- context.py --- env gathering (cwd, git), @file/@clip expansion
-    +-- banner.py ---- startup banner with live system stats
-    +-- shell.py ----- async subprocess execution
-    +-- kde.py ------- notify-send, wl-clipboard, baloosearch
-    +-- obsidian.py -- vault filesystem access + obsidian:// URI
+    +-- tui.py ------------- agentic REPL, commands, tool rendering, auto-rating
+    +-- agent.py ----------- Hive-Mind API (chat, facts, memory, tools, streaming)
+    +-- tools.py ----------- tool registry, parsing, 10 built-in handlers
+    +-- context_manager.py - token budgeting, smart pruning, summarization
+    +-- context.py --------- env gathering (cwd, git), @file/@clip expansion
+    +-- banner.py ---------- startup banner with live system stats
+    +-- shell.py ----------- async subprocess execution
+    +-- kde.py ------------- notify-send, wl-clipboard, baloosearch
+    +-- obsidian.py -------- vault filesystem access + obsidian:// URI
 ```
 
 ```
 talos-firefox/
     |
-    +-- background.js -- SSE proxy, port relay, conversation logging
+    +-- background.js -- SSE proxy, port relay, conversation storage, reasoning
     +-- sidebar.html --- Svelte 5 chat UI (bronze theme)
     +-- api.js --------- runtime.connect() port + message helpers
     +-- content.js ----- page context extraction + keyboard shortcuts
+    +-- ConversationPanel.svelte -- conversation history browser
 ```
 
 Hive-Mind provides the brain (inference, memory, learning). Talos is the

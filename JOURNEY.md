@@ -94,6 +94,44 @@ Tok/s display pulses bronze on update so you can see it refresh even when
 the speed is consistent. Sidebar toggle shortcut changed from Ctrl+Shift+Y
 to Alt+Shift+T to avoid conflicts.
 
+## v0.7.0 — The smarter agent
+
+The biggest single release. Three major capabilities landed in one shot:
+
+**Tool-use via function calling.** The LLM now invokes tools directly through
+`<tool_call>` XML tags instead of just proposing shell commands. Ten built-in
+tools — shell execution, file read/write/list, clipboard, notifications, web
+fetch, and fact store/get. Tool results feed back into the reasoning loop
+automatically. The tool registry uses `functools.partial` to bind agent-dependent
+handlers, and `tools_to_openai_schema()` generates the function-calling payload
+for llama-server's native tool support.
+
+**Step-by-step reasoning.** `reason <query>` (TUI) and `/reason <query>`
+(sidebar) trigger chain-of-thought via `<think>` blocks. The SSE parser detects
+llama-server's native `reasoning_content` field and wraps it in `<think>` tags
+on-the-fly. TUI renders thinking in amber Rich Panels; the sidebar uses
+collapsible `<details>` elements. Discovered during live testing that
+llama-server streams reasoning as a separate delta field rather than inline
+tags — had to update both Python and JS SSE parsers.
+
+**Conversation persistence.** TUI gets `save`/`load`/`sessions`/`export`
+commands backed by Hive-Mind Redis (28-day TTL). Firefox sidebar auto-saves to
+`browser.storage.local` with debounced writes, a conversation history panel
+(clock icon in toolbar), and `/new` to start fresh. Context window management
+via smart pruning — keeps first turn + last 6, drops middle oldest-first,
+truncates bloated turns.
+
+**Auto-rating.** Command execution results now auto-rate the learning signal
+based on exit codes (success → positive, failure → negative). Shows `▲`/`▼`
+inline with manual `+`/`-` override. Enriches the training pipeline without
+requiring user input on every interaction.
+
+**Performance.** HiveCoder-7B hitting 88 tok/s on the R9700 XT — up from ~61
+tok/s earlier. The Qwen2.5-Coder-7B Q5_K_M quantization with ROCm 7.12 and
+RDNA4 optimizations is screaming.
+
+116 Python tests, 26 JS tests. Zero lint errors. Everything signed and deployed.
+
 ---
 
 ## Lessons along the way
@@ -113,6 +151,10 @@ to Alt+Shift+T to avoid conflicts.
   `/etc/pki/ca-trust/source/anchors/` and running `update-ca-trust extract`.
 - **Selenium Remote vs Firefox** — `webdriver.Remote` lacks `install_addon()`.
   Use `webdriver.Firefox` directly.
+- **llama-server reasoning_content** — when models think, llama-server streams
+  reasoning as a separate `reasoning_content` delta field, not inline `<think>`
+  tags. SSE parsers must detect this field and wrap it in tags for downstream
+  rendering.
 
 ## What's next
 
