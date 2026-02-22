@@ -1,6 +1,6 @@
 # Talos Roadmap
 
-Current: **v0.7.0** — tool-use, reasoning, conversation persistence, 88 tok/s
+Current: **v0.7.2** — smarter suggestions, gold/dark theme, Zen Browser
 
 ---
 
@@ -101,14 +101,27 @@ Current: **v0.7.0** — tool-use, reasoning, conversation persistence, 88 tok/s
 
 ---
 
-## Phase 6: Desktop Integration (v0.8)
+## ~~Phase 6 Part 1: Smarter Suggestions & Theme (v0.7.2)~~ ✓
 
 ### Smarter ghost suggestions
-- [ ] Context-aware suggestion ranking — weigh by recent conversation topic, active page, time of day
-- [ ] Slash command suggestions with parameter hints (`/web <url>`, `/search <query>`, `/reason <query>`)
-- [ ] Preemptive suggestion chains — multi-step follow-ups based on last assistant response
-- [ ] Expand `suggestions.test.js` — context-aware matching, slash commands, preemptive triggers, edge cases
-- [ ] TUI suggestion parity — port ghost suggestions from sidebar to prompt_toolkit completer
+- [x] Context-aware suggestion ranking — context suggestions ranked above base suggestions
+- [x] Slash command hints with parameter completion (`/se` → `arch <query>`, `/w` → `eb <url>`)
+- [x] Page-aware suggestions — GitHub URLs → "What does this PR do?", selections → "Explain this selection"
+- [x] Preemptive suggestion chains — Tab-complete advances depth, depth 1 = follow-up to follow-up (8 chain mappings)
+- [x] Extracted `suggestions.js` engine (pure functions, testable) — InputBar consumes via imports
+- [x] TUI parity — `TalosAutoSuggest` via prompt_toolkit `AutoSuggest`, right-arrow accepts
+- [x] `suggestions.test.js` expanded from 5 → 48 tests; new `test_suggestions.py` with 24 tests
+- [x] 140 Python tests, 69 JS tests, 0 lint errors
+
+### Theme refresh
+- [x] `--gold` (#E8B94D) for content emphasis — headings, bold, code labels, streaming cursor, logo
+- [x] Dark theme refresh — near-black base (`--forge: #141418`) to match Zen Browser
+- [x] All palette colors brightened for punch on darker background
+- [x] Extension v0.7.2 signed and installed in Zen Browser (Flatpak)
+
+---
+
+## Phase 6 Part 2: Desktop Integration (v0.8)
 
 ### KDE Plasma widget
 - [ ] Desktop widget showing Talos status, quick-ask input, recent conversations
