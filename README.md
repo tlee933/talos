@@ -6,7 +6,7 @@
 ```
 ╭────────────────────────────╮  ╭─ system ──────────────────────────────────────────╮
 │                            │  │  hivemind    connected http://localhost:8090      │
-│  ╔╦╗╔═╗╦  ╔═╗╔═╗           │  │  model       HiveCoder-7B 88 tok/s online         │
+│  ╔╦╗╔═╗╦  ╔═╗╔═╗           │  │  model       HiveCoder-7B 88 tok/s online           │
 │   ║ ╠═╣║  ║ ║╚═╗           │  │  rag         ━━━━━━━━━━━━╌╌╌╌ 75% 73 queries      │
 │   ╩ ╩ ╩╩═╝╚═╝╚═╝           │  │  learning    ━━━━━━━━━━╌╌╌╌╌╌ 64% 32/50 samples   │
 │   v0.7.2 — the bronze      │  │              ~3.7d to next train · v0.9.1         │
