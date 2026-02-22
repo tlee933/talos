@@ -132,6 +132,37 @@ RDNA4 optimizations is screaming.
 
 116 Python tests, 26 JS tests. Zero lint errors. Everything signed and deployed.
 
+## v0.7.2 — Gold and darkness
+
+Extracted the suggestion engine into dedicated modules for both platforms.
+`suggestions.js` powers the Firefox/Zen sidebar; `suggestions.py` mirrors the
+logic for the TUI. All pure functions, fully testable.
+
+**Smarter ghost suggestions.** Context-aware ranking puts follow-ups above base
+suggestions. Slash command hints complete as you type — `/se` ghosts
+`arch <query>`, `/w` ghosts `eb <url>`. Page-aware suggestions detect GitHub
+URLs ("What does this PR do?") and text selections ("Explain this selection").
+Suggestion chains track depth — Tab-complete a preemptive, send it, and the
+next preemptive is a follow-up to the follow-up (8 chain mappings). TUI gets
+ghost text via prompt_toolkit's `AutoSuggest` — dimmed suggestions appear as
+you type, right-arrow accepts.
+
+**Gold highlights.** Added `--gold` as a dedicated content emphasis color.
+Headings, bold text, code block language labels, blockquote borders, inline
+code underlines, the streaming cursor, the "T" logo, and the tok/s pulse all
+glow gold. Bronze stays on interactive elements — buttons, input focus, hovers.
+Clear visual hierarchy: gold draws the eye to content structure, bronze anchors
+the interactive bits.
+
+**Dark theme refresh for Zen Browser.** Switched the default browser to Zen
+(Firefox fork, Flatpak). Darkened the base from navy (`#1A1A2E`) to near-black
+(`#141418`) to match Zen's dark chrome. Brightened every accent color for punch
+on the darker background — bronze, gold, amber, verdigris, warm text, muted
+text all stepped up. Updated all hardcoded rgba values to match. Looks killer
+with Dark Reader layered on top.
+
+140 Python tests, 69 JS tests. Extension v0.7.2 signed and installed in Zen.
+
 ---
 
 ## Lessons along the way
@@ -155,9 +186,17 @@ RDNA4 optimizations is screaming.
   reasoning as a separate `reasoning_content` delta field, not inline `<think>`
   tags. SSE parsers must detect this field and wrap it in tags for downstream
   rendering.
+- **Zen Browser is a Flatpak** — profile lives at
+  `~/.var/app/app.zen_browser.zen/.zen/`. Install signed .xpi to the
+  `extensions/` dir under the profile. Same MV2 compat as Firefox.
+- **Wayland and screenshots** — Zen is native Wayland, invisible to X tools
+  (`xdotool`, `xprop`). Use KWin scripting or delayed `spectacle` with manual
+  focus switch.
+- **xdg-settings on Kinoite** — `qtpaths` missing warning is cosmetic.
+  `xdg-mime default` works fine for setting the default browser.
 
 ## What's next
 
 The guardian keeps learning. Every conversation, every correction, every rated
 response feeds back into the LoRA training pipeline. The model gets sharper.
-The RAG gets denser. The bronze grows a patina.
+The RAG gets denser. The bronze grows a patina — and now, it gleams with gold.
