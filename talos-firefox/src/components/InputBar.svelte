@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import ContextChip from './ContextChip.svelte';
-  import { matchSuggestion } from '../utils.js';
+  import { BASE_SUGGESTIONS, getContextSuggestions, getSlashHint, rankSuggestions, buildSuggestionChain } from '../suggestions.js';
 
   let { onSend, disabled = false, context = null, contextMode = null, onDismissContext, messages = [] } = $props();
   let text = $state('');
@@ -9,68 +9,30 @@
   let history = $state([]);
   let historyIndex = $state(-1);
   let savedDraft = $state('');
+  let suggestionDepth = $state(0);
 
-  const BASE_SUGGESTIONS = [
-    'Summarize this page',
-    'Explain this code',
-    'What does this do?',
-    'Write a function that ',
-    'Help me understand ',
-    'How do I ',
-    'Fix this bug',
-    'Refactor this to ',
-    'What are the key points?',
-    'Compare these approaches',
-    'Give me an example of ',
-    'Translate this to ',
-    'Debug this error',
-    'Optimize this code',
-    'What is the difference between ',
-    '/search ',
-    '/web ',
-    '/reason ',
-    '/new',
-    '/help',
-  ];
-
-  // Build context-aware follow-up suggestions from last assistant response
   let contextSuggestions = $derived.by(() => {
     const last = [...messages].reverse().find((m) => m.role === 'assistant' && m.content);
-    if (!last) return [];
-    const c = last.content.toLowerCase();
-    const follow = [];
-
-    // Code-related follow-ups
-    if (c.includes('```') || c.includes('function') || c.includes('class ')) {
-      follow.push('Explain this step by step', 'Can you add error handling?', 'Write tests for this', 'Can you optimize this?', 'Show me a different approach');
-    }
-    // List/comparison follow-ups
-    if (c.includes('1.') || c.includes('- ') || c.includes('* ')) {
-      follow.push('Tell me more about the first one', 'Which do you recommend?', 'Can you elaborate on that?', 'Give me a comparison table');
-    }
-    // Error/debugging follow-ups
-    if (c.includes('error') || c.includes('bug') || c.includes('fix') || c.includes('issue')) {
-      follow.push('What caused this error?', 'How do I prevent this?', 'Are there other edge cases?', 'Show me the fix');
-    }
-    // Explanation follow-ups
-    if (c.includes('means') || c.includes('because') || c.includes('essentially')) {
-      follow.push('Can you give me an example?', 'Explain it more simply', 'How does this relate to ', 'What are the tradeoffs?');
-    }
-    // General follow-ups always available after a response
-    follow.push('Go deeper on that', 'Can you rewrite that?', 'Thanks, now ', 'What about ');
-
-    return follow;
+    return last ? getContextSuggestions(last.content, context) : [];
   });
 
-  // Pick the top preemptive suggestion for empty input
-  let preempt = $derived(contextSuggestions.length > 0 ? contextSuggestions[0] : '');
+  let lastAssistantContent = $derived.by(() => {
+    const last = [...messages].reverse().find((m) => m.role === 'assistant' && m.content);
+    return last ? last.content : '';
+  });
+
+  let preempt = $derived.by(() => {
+    if (suggestionDepth > 0) {
+      return buildSuggestionChain(lastAssistantContent, suggestionDepth);
+    }
+    return contextSuggestions.length > 0 ? contextSuggestions[0] : '';
+  });
 
   let ghost = $derived.by(() => {
-    // Empty field after a conversation — show preemptive suggestion
     if (!text && preempt) return preempt;
-    // Context-aware suggestions take priority
-    const all = [...contextSuggestions, ...BASE_SUGGESTIONS];
-    return matchSuggestion(text, all);
+    const hint = getSlashHint(text);
+    if (hint) return hint;
+    return rankSuggestions(text, contextSuggestions, BASE_SUGGESTIONS);
   });
 
   function handleKeydown(e) {
@@ -154,6 +116,8 @@
   function send() {
     const trimmed = text.trim();
     if (!trimmed || disabled) return;
+    // Track suggestion chains — if user Tab-completed a preemptive, advance depth
+    const wasPreemptive = preempt && trimmed === preempt;
     // Push to history (avoid duplicating the last entry)
     if (!history.length || history[history.length - 1] !== trimmed) {
       history.push(trimmed);
@@ -163,6 +127,11 @@
     spawnFlames();
     onSend(trimmed);
     text = '';
+    if (wasPreemptive) {
+      suggestionDepth++;
+    } else {
+      suggestionDepth = 0;
+    }
   }
 
   // Re-focus textarea whenever it becomes enabled (after streaming ends)

@@ -7,6 +7,7 @@ import shlex
 from pathlib import Path
 
 from prompt_toolkit import PromptSession
+from prompt_toolkit.auto_suggest import AutoSuggest, Suggestion
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.completion import Completer, Completion, merge_completers
 from prompt_toolkit.formatted_text import HTML
@@ -23,6 +24,7 @@ from rich.text import Text
 from talos.agent import Agent, ParsedResponse, Turn, parse_response
 from talos.config import Config
 from talos.context import gather_environment, expand_references_async
+from talos.suggestions import get_ghost
 from talos.theme import THEME, COLORS
 from talos import shell
 
@@ -208,6 +210,20 @@ class AtRefCompleter(Completer):
                     )
         except (OSError, PermissionError):
             return
+
+
+class TalosAutoSuggest(AutoSuggest):
+    """Ghost suggestions powered by the suggestion engine."""
+
+    def __init__(self):
+        self._last_assistant = ""
+
+    def update_context(self, content: str):
+        self._last_assistant = content
+
+    def get_suggestion(self, buffer, document):
+        ghost = get_ghost(document.text, self._last_assistant)
+        return Suggestion(ghost) if ghost else None
 
 
 # prompt_toolkit style to match our bronze theme
@@ -686,6 +702,7 @@ async def run(config: Config):
         # Set up prompt_toolkit session
         HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
         completer = merge_completers([TalosCommandCompleter(), ShellCompleter(), AtRefCompleter()])
+        auto_suggest = TalosAutoSuggest()
         session: PromptSession = PromptSession(
             history=FileHistory(str(HISTORY_PATH)),
             completer=completer,
@@ -693,6 +710,7 @@ async def run(config: Config):
             style=PT_STYLE,
             enable_history_search=True,
             key_bindings=kb,
+            auto_suggest=auto_suggest,
         )
 
         while True:
@@ -839,6 +857,7 @@ async def run(config: Config):
                 disconnected = False
 
             disconnected = False
+            auto_suggest.update_context(parsed.raw[:2000])
             interaction = await _agentic_step(
                 agent, parsed, session, config,
                 context=full_context, query=message,
