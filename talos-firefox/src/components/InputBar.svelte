@@ -53,7 +53,12 @@
     return follow;
   });
 
+  // Pick the top preemptive suggestion for empty input
+  let preempt = $derived(contextSuggestions.length > 0 ? contextSuggestions[0] : '');
+
   let ghost = $derived.by(() => {
+    // Empty field after a conversation — show preemptive suggestion
+    if (!text && preempt) return preempt;
     if (!text || text.length < 2) return '';
     const lower = text.toLowerCase();
     // Context-aware suggestions take priority
@@ -152,7 +157,7 @@
         bind:this={textarea}
         bind:value={text}
         onkeydown={handleKeydown}
-        placeholder="Ask Talos..."
+        placeholder={preempt ? '' : 'Ask Talos...'}
         rows="1"
         {disabled}
       ></textarea>
