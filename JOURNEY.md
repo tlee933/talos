@@ -195,6 +195,31 @@ model that answered.
 147 Python tests, 14 router tests, 69 JS tests. Extension v0.7.3 signed and
 installed in Zen.
 
+## v0.7.4 — Context pruning
+
+Fixed context overflow in the Firefox/Zen extension. Long reasoning sessions
+with R1 were blowing through the 32K context window because `pruneHistory()`
+wasn't aggressive enough. Three fixes: strip `<think>` blocks from older
+messages (reasoning traces accumulate fast), truncate bloated individual
+messages to 3K chars, and lower the history budget from ~25K to ~20K tokens.
+Web page content injection reduced from 4K to 2K chars.
+
+## v0.7.5 — Think block separation
+
+The real fix for context overflow. R1's `<think>` reasoning blocks (2-5K chars
+each) were being sent back to the LLM in conversation history on every turn —
+the model was re-reading its own internal monologue. Now the API history
+snapshot strips all think blocks from assistant messages before sending. The
+blocks stay visible in the sidebar display but never waste context budget.
+
+Also added the Self-Instruct citation (Wang et al., 2022) to the Hive-Mind
+architecture docs — the knowledge distillation loop is a production
+implementation of that technique.
+
+Hive-Mind docs cleaned up: 13 stale files purged, README/ARCHITECTURE/
+QUICKSTART/ROADMAP rewritten for the current dual-LLM stack. 486 insertions,
+4,306 deletions.
+
 ---
 
 ## Lessons along the way
