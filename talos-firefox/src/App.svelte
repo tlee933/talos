@@ -43,7 +43,7 @@
   function pruneHistory() {
     // Target: ~20K tokens worth of chars (~70K chars at 3.5 chars/token)
     // Leaves headroom for system prompt + RAG facts injected server-side
-    const MAX_HISTORY_CHARS = 70000;
+    const MAX_HISTORY_CHARS = 102000;
     const MAX_MSG_CHARS = 3000;
     const MIN_RECENT = 6;
 
@@ -67,17 +67,18 @@
     }
 
     // Step 3: Drop middle messages oldest-first if still over budget
-    const totalChars = () => messages.reduce((sum, m) => sum + (m.content || '').length, 0);
-    if (totalChars() < MAX_HISTORY_CHARS || messages.length <= MIN_RECENT + 1) return;
+    // Budget counts post-strip size since think blocks never reach the API
+    const stripRe = /<think>[\s\S]*?<\/think>\s*/g;
+    const apiLen = (m) => (m.role === 'assistant' ? (m.content || '').replace(stripRe, '') : (m.content || '')).length;
+    const totalChars = (arr) => arr.reduce((sum, m) => sum + apiLen(m), 0);
+    if (totalChars(messages) < MAX_HISTORY_CHARS || messages.length <= MIN_RECENT + 1) return;
 
     const first = messages.slice(0, 1);
     const recent = messages.slice(-MIN_RECENT);
     let middle = messages.slice(1, -MIN_RECENT);
 
     while (middle.length > 0 && (
-      first.reduce((s, m) => s + (m.content || '').length, 0) +
-      middle.reduce((s, m) => s + (m.content || '').length, 0) +
-      recent.reduce((s, m) => s + (m.content || '').length, 0)
+      totalChars(first) + totalChars(middle) + totalChars(recent)
     ) > MAX_HISTORY_CHARS) {
       middle.shift();
     }
