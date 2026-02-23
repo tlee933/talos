@@ -51,7 +51,8 @@
     for (let i = 0; i < messages.length - 2; i++) {
       const m = messages[i];
       if (m.role === 'assistant' && m.content?.includes('<think>')) {
-        m.content = m.content.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
+        const stripped = m.content.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
+        m.content = stripped || '(continued)';
       }
     }
 
@@ -206,14 +207,14 @@
     pruneHistory();
 
     // Snapshot history for API — strip think blocks (display-only, waste context budget)
+    // Keep all turns to preserve conversational continuity across reason/normal switches
     const stripThink = (s) => s.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
     const history = messages
       .filter((m) => m.content)
       .map((m) => ({
         role: m.role,
-        content: m.role === 'assistant' ? stripThink(m.content) : m.content,
-      }))
-      .filter((m) => m.content);
+        content: m.role === 'assistant' ? (stripThink(m.content) || '(continued)') : m.content,
+      }));
 
     messages.push({ role: 'assistant', content: '' });
 

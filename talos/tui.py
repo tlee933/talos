@@ -932,7 +932,7 @@ async def run(config: Config):
                 )
                 if interaction:
                     interaction["rating"] = "positive"
-                    console.print("  [ok]\u25b2[/] [dim]r1 reasoning → auto-positive[/]")
+                    console.print("  [ok]\u25b2[/] [dim]distill reasoning → auto-positive[/]")
                     asyncio.create_task(agent.learning_queue_add(interaction))
 
             # Auto-rate and log interaction if commands were executed
