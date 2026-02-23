@@ -7,3 +7,4 @@ build/
 *.gguf
 .ruff_cache/
 .env
+node_modules/
