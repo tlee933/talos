@@ -76,3 +76,76 @@ export function matchSuggestion(input, suggestions) {
   const match = suggestions.find((s) => s.toLowerCase().startsWith(lower));
   return match ? match.slice(input.length) : '';
 }
+
+/**
+ * Strip think blocks from a string, return '(continued)' if nothing remains.
+ */
+export function stripThink(s) {
+  const stripped = s.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
+  return stripped || '(continued)';
+}
+
+/**
+ * Prune conversation history to fit within context budget.
+ * Mutates the messages array in place and returns it.
+ */
+export function pruneHistory(messages, opts = {}) {
+  const MAX_HISTORY_CHARS = opts.maxChars ?? 102000;
+  const MAX_MSG_CHARS = opts.maxMsgChars ?? 3000;
+  const MIN_RECENT = opts.minRecent ?? 6;
+
+  // Step 1: Strip think blocks from older messages (keep in most recent 2)
+  for (let i = 0; i < messages.length - 2; i++) {
+    const m = messages[i];
+    if (m.role === 'assistant' && m.content?.includes('<think>')) {
+      m.content = stripThink(m.content);
+    }
+  }
+
+  // Step 2: Truncate bloated individual messages (except last 2)
+  for (let i = 0; i < messages.length - 2; i++) {
+    if ((messages[i].content || '').length > MAX_MSG_CHARS) {
+      messages[i] = {
+        ...messages[i],
+        content: messages[i].content.slice(0, MAX_MSG_CHARS) + '\n...(truncated)',
+      };
+    }
+  }
+
+  // Step 3: Drop middle messages oldest-first if still over budget
+  // Budget counts post-strip size since think blocks never reach the API
+  const stripRe = /<think>[\s\S]*?<\/think>\s*/g;
+  const apiLen = (m) => (m.role === 'assistant' ? (m.content || '').replace(stripRe, '') : (m.content || '')).length;
+  const totalChars = (arr) => arr.reduce((sum, m) => sum + apiLen(m), 0);
+  if (totalChars(messages) < MAX_HISTORY_CHARS || messages.length <= MIN_RECENT + 1) return messages;
+
+  const first = messages.slice(0, 1);
+  const recent = messages.slice(-MIN_RECENT);
+  let middle = messages.slice(1, -MIN_RECENT);
+
+  while (middle.length > 0 && (
+    totalChars(first) + totalChars(middle) + totalChars(recent)
+  ) > MAX_HISTORY_CHARS) {
+    middle.shift();
+  }
+
+  messages.length = 0;
+  if (middle.length === 0) {
+    messages.push(...first, { role: 'system', content: '[earlier messages pruned]' }, ...recent);
+  } else {
+    messages.push(...first, ...middle, ...recent);
+  }
+  return messages;
+}
+
+/**
+ * Build API history snapshot from messages — strips think blocks, preserves all turns.
+ */
+export function buildApiHistory(messages) {
+  return messages
+    .filter((m) => m.content)
+    .map((m) => ({
+      role: m.role,
+      content: m.role === 'assistant' ? stripThink(m.content) : m.content,
+    }));
+}

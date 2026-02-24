@@ -6,6 +6,7 @@
     saveConversation, listConversations, loadConversation, deleteConversation,
   } from './api.js';
   import { DEFAULT_CONFIG } from './providers.js';
+  import { pruneHistory as _pruneHistory, buildApiHistory } from './utils.js';
   import Toolbar from './components/Toolbar.svelte';
   import MessageList from './components/MessageList.svelte';
   import InputBar from './components/InputBar.svelte';
@@ -41,52 +42,7 @@
   }
 
   function pruneHistory() {
-    // Target: ~20K tokens worth of chars (~70K chars at 3.5 chars/token)
-    // Leaves headroom for system prompt + RAG facts injected server-side
-    const MAX_HISTORY_CHARS = 102000;
-    const MAX_MSG_CHARS = 3000;
-    const MIN_RECENT = 6;
-
-    // Step 1: Strip think blocks from older messages (keep in most recent)
-    for (let i = 0; i < messages.length - 2; i++) {
-      const m = messages[i];
-      if (m.role === 'assistant' && m.content?.includes('<think>')) {
-        const stripped = m.content.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
-        m.content = stripped || '(continued)';
-      }
-    }
-
-    // Step 2: Truncate bloated individual messages (except last 2)
-    for (let i = 0; i < messages.length - 2; i++) {
-      if ((messages[i].content || '').length > MAX_MSG_CHARS) {
-        messages[i] = {
-          ...messages[i],
-          content: messages[i].content.slice(0, MAX_MSG_CHARS) + '\n...(truncated)',
-        };
-      }
-    }
-
-    // Step 3: Drop middle messages oldest-first if still over budget
-    // Budget counts post-strip size since think blocks never reach the API
-    const stripRe = /<think>[\s\S]*?<\/think>\s*/g;
-    const apiLen = (m) => (m.role === 'assistant' ? (m.content || '').replace(stripRe, '') : (m.content || '')).length;
-    const totalChars = (arr) => arr.reduce((sum, m) => sum + apiLen(m), 0);
-    if (totalChars(messages) < MAX_HISTORY_CHARS || messages.length <= MIN_RECENT + 1) return;
-
-    const first = messages.slice(0, 1);
-    const recent = messages.slice(-MIN_RECENT);
-    let middle = messages.slice(1, -MIN_RECENT);
-
-    while (middle.length > 0 && (
-      totalChars(first) + totalChars(middle) + totalChars(recent)
-    ) > MAX_HISTORY_CHARS) {
-      middle.shift();
-    }
-
-    messages = [...first, ...middle, ...recent];
-    if (middle.length === 0) {
-      messages = [...first, { role: 'system', content: '[earlier messages pruned]' }, ...recent];
-    }
+    _pruneHistory(messages);
   }
 
   function debouncedSave() {
@@ -207,15 +163,8 @@
     // Prune if needed before sending
     pruneHistory();
 
-    // Snapshot history for API — strip think blocks (display-only, waste context budget)
-    // Keep all turns to preserve conversational continuity across reason/normal switches
-    const stripThink = (s) => s.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
-    const history = messages
-      .filter((m) => m.content)
-      .map((m) => ({
-        role: m.role,
-        content: m.role === 'assistant' ? (stripThink(m.content) || '(continued)') : m.content,
-      }));
+    // Snapshot history for API — strip think blocks, preserve all turns
+    const history = buildApiHistory(messages);
 
     messages.push({ role: 'assistant', content: '' });
 
