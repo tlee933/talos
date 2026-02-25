@@ -160,10 +160,8 @@
 
     messages.push({ role: 'user', content: userContent });
 
-    // Prune if needed before sending
-    pruneHistory();
-
-    // Snapshot history for API — strip think blocks, preserve all turns
+    // Send full history to API — server handles context pruning
+    // Client only strips think blocks (display-only, waste bandwidth)
     const history = buildApiHistory(messages);
 
     messages.push({ role: 'assistant', content: '' });
